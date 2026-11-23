@@ -37,16 +37,16 @@
    - Botón *"Repasar Solo Mis Fallos"* para estudiar focalizadamente las preguntas erradas.
 6. **&#127183; Modo Tarjetas (Flashcards)**:
    - Tarjetas interactivas 3D con efecto de volteo para memorizar rápidamente conceptos clave, puertos y comandos Cisco.
-7. **&#128221; PC3 de Referencia - Examen en Hoja Impresa (Nuevo Módulo)**:
+7. **&#128221; PC3 de Referencia - Examen en Hoja Impresa**:
    - Basado en un examen físico real de la UTP resuelto **a mano por escrito** (4 preguntas de 5 puntos c/u = 20 pts).
-   - **Área de redacción escrita**: Cuadro de texto amplio por cada pregunta para simular la respuesta a mano (pasos, menús, comandos, valores y lo que se vería en pantalla). Auto-guardado local.
-   - **Rúbrica de Autoevaluación interactiva**: 5 puntos clave por pregunta (1.0 pt cada uno) con casillas de verificación que calculan la nota sobre 20.
-   - **Respuesta Modelo Completa**: Pasos detallados paso a paso de cada servicio.
-   - **Sección "¿Qué debería verse en la prueba?"**: Descripción exacta de mensajes (`DHCP request successful.`, `Send Success`), campos asignados y pantallas del navegador.
-   - **Hojas de Referencia Rápida (Plantillas)**: Secuencia estándar, parámetros clave y comandos de prueba para DNS, DHCP, Correo Electrónico (SMTP/POP3) y Enrutamiento / Telefonía.
-   - **Generador de Variantes Aleatorias**: Cambia nombres, apellidos, valor de X en `192.168.X.0`, dominios y extensiones para entrenar sin memorizar datos fijos.
-   - **Entrenador de Comandos Escritos (Drill)**: Modos "Escribe el comando" (con validador tolerante de abreviaturas de Cisco IOS) y "Completa el comando" (fill-in-the-blank).
-   - **Simulacro en Papel e Impresión Limpia**: Temporizador de 60 minutos, botón "Imprimir Examen en Blanco" (con formato oficial UTP, renglones pautados para redactar a mano y cuadro de firma) y botón "Imprimir Solucionario y Rúbrica".
+   - **Diagrama Vectorial SVG**: Topología oficial en línea (sin imágenes externas) con routers, switches, servidores, teléfonos IP y etiquetas claras "VERIFICAR" para hipótesis no confirmadas.
+   - **Área de redacción escrita y Maqueta A4**: Vista previa interactiva de la hoja de examen físico con renglones pautados para redactar a mano e impresión limpia oficial UTP.
+   - **Interruptor de Soluciones y Rúbricas**: Botón superior para alternar la visualización de respuestas modelo y rúbricas sin alterar el modo de práctica escrita.
+   - **Entrenador de Comandos Escritos (Drill)**: 10 ejercicios (5 escribir + 5 completar) con resumen visible de avance por modo.
+8. **&#128218; Visor de Resúmenes Teóricos (Nuevo Módulo)**:
+   - Acceso offline inmediato a las guías de estudio de las Semanas 11 a 15 y al análisis de estilo de las PC1 y PC2.
+   - Renderizador Markdown mínimo integrado (encabezados, tablas, listas, código y estilos tipográficos con escape HTML).
+   - Buscador de texto en tiempo real para localizar conceptos, comandos y puertos rápidamente dentro de la semana seleccionada.
 
 ---
 
@@ -64,7 +64,8 @@ web_PC3/
 │   ├── preguntas.js      <- Banco de 65 preguntas teóricas estructuradas (+ 7 nuevas del examen de referencia)
 │   ├── comandos.js       <- 27 ejercicios de consola y terminal con validación
 │   ├── calculo.js        <- 15 generadores de variantes aleatorias con pasos
-│   └── pc3_referencia.js <- Módulo de examen en hoja: 4 preguntas, plantillas, variantes y comandos drill
+│   ├── pc3_referencia.js <- Módulo de examen en hoja: 4 preguntas, plantillas, variantes y comandos drill
+│   └── resumenes.js      <- Guías de estudio Markdown compiladas para uso offline sin fetch()
 │
 └── content/
     ├── semana11.md       <- Resumen teórico y comandos de la Semana 11

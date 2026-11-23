@@ -5,12 +5,159 @@
   'use strict';
 
   // ==========================================
+  // ACCESO SEGURO A LOS DATOS CARGADOS
+  // ==========================================
+  // Si algún archivo de data/ no se carga (ruta incorrecta, caché, error de
+  // red), la aplicación sigue funcionando y muestra un aviso claro en vez de
+  // romperse por completo.
+  const DATA = {
+    preguntas: (typeof PREGUNTAS_DATA !== 'undefined' && Array.isArray(PREGUNTAS_DATA)) ? PREGUNTAS_DATA : [],
+    comandos: (typeof COMANDOS_DATA !== 'undefined' && Array.isArray(COMANDOS_DATA)) ? COMANDOS_DATA : [],
+    calculo: (typeof CALCULO_DATA !== 'undefined' && Array.isArray(CALCULO_DATA)) ? CALCULO_DATA : [],
+    pc3: (typeof PC3_REF_DATA !== 'undefined' && PC3_REF_DATA && typeof PC3_REF_DATA === 'object') ? PC3_REF_DATA : null,
+    resumenes: (typeof RESUMENES_DATA !== 'undefined' && RESUMENES_DATA && typeof RESUMENES_DATA === 'object') ? RESUMENES_DATA : {}
+  };
+
+  function esArray(valor) {
+    return Array.isArray(valor) ? valor : [];
+  }
+
+  // Mezcla aleatoria uniforme (Fisher-Yates)
+  function mezclarArray(lista) {
+    const copia = esArray(lista).slice();
+    for (let i = copia.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      const tmp = copia[i];
+      copia[i] = copia[j];
+      copia[j] = tmp;
+    }
+    return copia;
+  }
+
+  // ---- Avisos en pantalla (reemplazan alert/confirm del navegador) ----
+  let avisoTimeoutId = null;
+
+  function mostrarAviso(elemento, mensaje, tipo, duracion) {
+    const el = typeof elemento === 'string' ? document.getElementById(elemento) : elemento;
+    if (!el) return;
+    el.className = 'inline-notice' + (tipo ? ' is-' + tipo : '');
+    el.innerHTML = mensaje;
+    el.style.display = 'block';
+    if (avisoTimeoutId) {
+      clearTimeout(avisoTimeoutId);
+      avisoTimeoutId = null;
+    }
+    if (duracion) {
+      avisoTimeoutId = setTimeout(function () { el.style.display = 'none'; }, duracion);
+    }
+  }
+
+  function ocultarAviso(elemento) {
+    const el = typeof elemento === 'string' ? document.getElementById(elemento) : elemento;
+    if (el) el.style.display = 'none';
+  }
+
+  // Confirmación por doble clic: funciona incluso cuando el navegador
+  // bloquea los diálogos nativos (alert/confirm).
+  function confirmarEnBoton(btn, textoConfirmacion, alConfirmar) {
+    if (!btn) return;
+    if (btn.dataset.confirmando === '1') {
+      btn.dataset.confirmando = '0';
+      btn.classList.remove('is-confirming');
+      btn.textContent = btn.dataset.textoOriginal || btn.textContent;
+      alConfirmar();
+      return;
+    }
+    btn.dataset.textoOriginal = btn.textContent;
+    btn.dataset.confirmando = '1';
+    btn.classList.add('is-confirming');
+    btn.textContent = textoConfirmacion;
+    setTimeout(function () {
+      if (btn.dataset.confirmando === '1') {
+        btn.dataset.confirmando = '0';
+        btn.classList.remove('is-confirming');
+        btn.textContent = btn.dataset.textoOriginal;
+      }
+    }, 5000);
+  }
+
+  // ---- Validador tolerante de comandos Cisco IOS / consola ----
+  function normalizarComando(str) {
+    return String(str || '').toLowerCase().replace(/\s+/g, ' ').trim();
+  }
+
+  const EQUIVALENCIAS_COMANDOS = [
+    [/^conf\s+t$/, 'configure terminal'],
+    [/^sh\s+/, 'show '],
+    [/^int\s+/, 'interface '],
+    [/^inter\s+/, 'interface '],
+    [/^g(\d\/\d\/?\d*)/, 'gigabitethernet $1'],
+    [/^f(\d\/\d\/?\d*)/, 'fastethernet $1'],
+    [/^sw\s+mo(de)?\s+acc(ess)?/, 'switchport mode access'],
+    [/^sw\s+acc(ess)?\s+vlan/, 'switchport access vlan'],
+    [/^sw\s+mo(de)?\s+tr(unk)?/, 'switchport mode trunk'],
+    [/^encap\s+dot1q/, 'encapsulation dot1q'],
+    [/^ip\s+add\s+/, 'ip address '],
+    [/^ipv6\s+add\s+/, 'ipv6 address '],
+    [/^no\s+sh$/, 'no shutdown'],
+    [/^ip\s+dhcp\s+excl\s+/, 'ip dhcp excluded-address ']
+  ];
+
+  function validarComandoTolerante(inputStr, cmdObj) {
+    const raw = String(inputStr || '').trim();
+    if (!raw || !cmdObj) return false;
+
+    // 1. Patrones oficiales declarados en los datos
+    for (const pat of esArray(cmdObj.patronesValidos)) {
+      try {
+        if (pat.test(raw)) return true;
+      } catch (e) { /* patrón inválido: se ignora */ }
+    }
+
+    // 2. Comparación normalizada con abreviaturas Cisco
+    let norm = normalizarComando(raw);
+    let solNorm = normalizarComando(cmdObj.solucion);
+    if (norm === solNorm) return true;
+
+    for (const [regex, rep] of EQUIVALENCIAS_COMANDOS) {
+      norm = norm.replace(regex, rep);
+      solNorm = solNorm.replace(regex, rep);
+    }
+
+    return norm === solNorm;
+  }
+
+  // ---- Banner global de error ----
+  function mostrarErrorGlobal(mensaje) {
+    const barra = document.getElementById('app-fatal');
+    if (!barra || barra.dataset.visible === '1') return;
+    barra.dataset.visible = '1';
+    barra.innerHTML = '<span>&#9888; ' + mensaje + '</span>' +
+      '<button type="button" id="app-fatal-close">Ocultar</button>';
+    barra.style.display = 'flex';
+    const cerrar = document.getElementById('app-fatal-close');
+    if (cerrar) {
+      cerrar.addEventListener('click', function () { barra.style.display = 'none'; });
+    }
+  }
+
+  window.addEventListener('error', function (e) {
+    mostrarErrorGlobal('Se produjo un error de JavaScript: ' + (e.message || 'desconocido') +
+      '. Abre la consola (F12) para más detalles.');
+  });
+
+  window.addEventListener('unhandledrejection', function (e) {
+    const motivo = e && e.reason ? (e.reason.message || e.reason) : 'desconocido';
+    mostrarErrorGlobal('Se produjo un error asíncrono: ' + motivo + '.');
+  });
+
+  // ==========================================
   // ESTADO GLOBAL Y LOCALSTORAGE
   // ==========================================
   const STORAGE_KEY = 'utp_pc3_progreso_v1';
 
-  let appState = {
-    stats: {
+  function estadisticasVacias() {
+    return {
       total: 0,
       aciertos: 0,
       fallos: 0,
@@ -22,7 +169,11 @@
         15: { aciertos: 0, fallos: 0 }
       },
       fallosIds: []
-    },
+    };
+  }
+
+  let appState = {
+    stats: estadisticasVacias(),
     simulacro: {
       activo: false,
       timerInterval: null,
@@ -41,15 +192,35 @@
   };
 
   function cargarStats() {
+    const base = estadisticasVacias();
     try {
       const data = localStorage.getItem(STORAGE_KEY);
       if (data) {
         const parsed = JSON.parse(data);
-        appState.stats = Object.assign(appState.stats, parsed);
+        if (parsed && typeof parsed === 'object') {
+          base.total = Number(parsed.total) || 0;
+          base.aciertos = Number(parsed.aciertos) || 0;
+          base.fallos = Number(parsed.fallos) || 0;
+          if (parsed.semanas && typeof parsed.semanas === 'object') {
+            for (let sem = 11; sem <= 15; sem++) {
+              const valor = parsed.semanas[sem];
+              if (valor) {
+                base.semanas[sem] = {
+                  aciertos: Number(valor.aciertos) || 0,
+                  fallos: Number(valor.fallos) || 0
+                };
+              }
+            }
+          }
+          if (Array.isArray(parsed.fallosIds)) {
+            base.fallosIds = parsed.fallosIds.filter(id => typeof id === 'string');
+          }
+        }
       }
     } catch (e) {
       console.warn("No se pudo leer localStorage:", e);
     }
+    appState.stats = base;
   }
 
   function guardarStats() {
@@ -61,24 +232,27 @@
   }
 
   function registrarIntento(id, semana, esCorrecto) {
-    appState.stats.total++;
+    const stats = appState.stats;
+    if (!stats.semanas) stats.semanas = estadisticasVacias().semanas;
+    if (!Array.isArray(stats.fallosIds)) stats.fallosIds = [];
+
+    const semNum = Number(semana);
+    if (!stats.semanas[semNum]) stats.semanas[semNum] = { aciertos: 0, fallos: 0 };
+
+    stats.total = (Number(stats.total) || 0) + 1;
     if (esCorrecto) {
-      appState.stats.aciertos++;
-      if (appState.stats.semanas[semana]) {
-        appState.stats.semanas[semana].aciertos++;
-      }
+      stats.aciertos = (Number(stats.aciertos) || 0) + 1;
+      stats.semanas[semNum].aciertos++;
       // Quitar de fallos si estaba
-      const idx = appState.stats.fallosIds.indexOf(id);
+      const idx = stats.fallosIds.indexOf(id);
       if (idx > -1) {
-        appState.stats.fallosIds.splice(idx, 1);
+        stats.fallosIds.splice(idx, 1);
       }
     } else {
-      appState.stats.fallos++;
-      if (appState.stats.semanas[semana]) {
-        appState.stats.semanas[semana].fallos++;
-      }
-      if (!appState.stats.fallosIds.includes(id)) {
-        appState.stats.fallosIds.push(id);
+      stats.fallos = (Number(stats.fallos) || 0) + 1;
+      stats.semanas[semNum].fallos++;
+      if (!stats.fallosIds.includes(id)) {
+        stats.fallosIds.push(id);
       }
     }
     guardarStats();
@@ -86,28 +260,139 @@
   }
 
   // ==========================================
+  // NORMALIZACIÓN DE PREGUNTAS Y ARRANQUE SEGURO
+  // ==========================================
+  function normalizarPregunta(p) {
+    if (!p || typeof p !== 'object') return p;
+
+    // 1. Opciones alternativas si falta 'opciones'
+    if (!p.opciones) {
+      p.opciones = p.options || p.alternativas || p.choices || null;
+    }
+
+    // 2. Manejo de tipo verdadero_falso
+    if (p.tipo === 'verdadero_falso') {
+      if (!p.opciones || !Array.isArray(p.opciones) || p.opciones.length === 0) {
+        p.opciones = ['Verdadero', 'Falso'];
+      }
+      // Soporte para campo booleano 'esVerdadero'
+      if (typeof p.esVerdadero === 'boolean' && p.respuesta === undefined && p.correcta === undefined) {
+        p.respuesta = p.esVerdadero ? 0 : 1;
+      }
+    }
+
+    // 3. Unificar 'correcta' o 'answer' hacia 'respuesta'
+    if (p.respuesta === undefined) {
+      if (p.correcta !== undefined) {
+        p.respuesta = p.correcta;
+      } else if (p.answer !== undefined) {
+        p.respuesta = p.answer;
+      }
+    }
+
+    // 4. verdadero_falso con respuesta booleana: true -> 0, false -> 1
+    if (typeof p.respuesta === 'boolean') {
+      p.respuesta = p.respuesta ? 0 : 1;
+    }
+
+    // 5. respuesta como letra ("A".."D" o "a".."d") o como texto idéntico a una opción
+    if (typeof p.respuesta === 'string') {
+      const rTrim = p.respuesta.trim();
+      if (/^[a-dA-D]$/.test(rTrim)) {
+        p.respuesta = rTrim.toUpperCase().charCodeAt(0) - 65;
+      } else if (Array.isArray(p.opciones)) {
+        const idxFound = p.opciones.findIndex(op => op.trim().toLowerCase() === rTrim.toLowerCase());
+        if (idxFound !== -1) {
+          p.respuesta = idxFound;
+        }
+      }
+    }
+
+    // 6. Asegurar que respuesta sea número si es opción múltiple o verdadero/falso numérico
+    if ((p.tipo === 'opcion_multiple' || p.tipo === 'verdadero_falso') && typeof p.respuesta === 'string' && !isNaN(Number(p.respuesta))) {
+      p.respuesta = parseInt(p.respuesta, 10);
+    }
+
+    // 7. Tipo completar: garantizar array respuestasValidas
+    if (p.tipo === 'completar' && !p.respuestasValidas && (p.respuesta !== undefined || p.correcta !== undefined)) {
+      p.respuestasValidas = [String(p.respuesta !== undefined ? p.respuesta : p.correcta)];
+    }
+
+    return p;
+  }
+
+  function seguro(nombre, fn, sectionId) {
+    try {
+      fn();
+    } catch (e) {
+      console.error(`[Módulo ${nombre} falló al iniciar]`, e);
+      if (sectionId) {
+        const sec = document.getElementById(sectionId);
+        if (sec) {
+          const alertBox = document.createElement('div');
+          alertBox.className = 'module-init-error';
+          alertBox.style.cssText = 'background: #fee2e2; border: 2px solid #ef4444; color: #991b1b; padding: 1rem; margin: 1rem; border-radius: 8px; font-weight: 600;';
+          alertBox.innerHTML = `⚠️ Ocurrió un error al inicializar el módulo "${nombre}": ${e.message}. Revisa la consola para más detalles.`;
+          sec.prepend(alertBox);
+        }
+      }
+    }
+  }
+
+  // ==========================================
   // INICIALIZACIÓN
   // ==========================================
   document.addEventListener('DOMContentLoaded', function () {
     // Incorporar preguntas teóricas nuevas de PC3 de Referencia al banco general si existen
-    if (typeof PC3_REF_DATA !== 'undefined' && Array.isArray(PC3_REF_DATA.preguntasTeoricasNuevas)) {
-      PC3_REF_DATA.preguntasTeoricasNuevas.forEach(np => {
-        if (!PREGUNTAS_DATA.some(p => p.id === np.id)) {
-          PREGUNTAS_DATA.push(np);
+    if (DATA.pc3 && Array.isArray(DATA.pc3.preguntasTeoricasNuevas)) {
+      DATA.pc3.preguntasTeoricasNuevas.forEach(np => {
+        if (!DATA.preguntas.some(p => p.id === np.id)) {
+          DATA.preguntas.push(np);
         }
       });
     }
 
-    cargarStats();
-    initNavegacion();
-    initModuloPreguntas();
-    initModuloComandos();
-    initModuloCalculo();
-    initModuloSimulacro();
-    initModuloProgreso();
-    initModuloFlashcards();
-    if (typeof PC3_REF_DATA !== 'undefined') {
-      initModuloPC3Referencia();
+    // Normalizar TODO el banco de preguntas teóricas
+    DATA.preguntas.forEach(p => normalizarPregunta(p));
+
+    seguro('Stats', cargarStats);
+    seguro('Navegación', initNavegacion);
+    seguro('Preguntas Teóricas', initModuloPreguntas, 'mod-preguntas');
+    seguro('Entrenador de Comandos', initModuloComandos, 'mod-comandos');
+    seguro('Ejercicios de Cálculo', initModuloCalculo, 'mod-calculo');
+    seguro('Simulacro de Examen', initModuloSimulacro, 'mod-simulacro');
+    seguro('Panel de Progreso', initModuloProgreso, 'mod-progreso');
+    seguro('Flashcards', initModuloFlashcards, 'mod-flashcards');
+    seguro('Resúmenes Teóricos', initModuloResumenes, 'mod-resumenes');
+
+    if (DATA.pc3) {
+      seguro('PC3 de Referencia', initModuloPC3Referencia, 'mod-pc3ref');
+    } else {
+      const pc3Sec = document.getElementById('mod-pc3ref');
+      if (pc3Sec) {
+        const warn = document.createElement('div');
+        warn.className = 'pc3ref-data-missing-notice';
+        warn.style.cssText = 'background: #fef3c7; border: 2px solid #f59e0b; color: #92400e; padding: 1.25rem; margin: 1rem; border-radius: 8px; font-weight: 600; text-align: center;';
+        warn.innerHTML = '⚠️ No se cargaron los datos de este módulo (<code>data/pc3_referencia.js</code>). ' +
+          'Verifica que la carpeta <code>data</code> esté junto a <code>index.html</code> y recarga con <strong>Ctrl + F5</strong>.';
+        pc3Sec.prepend(warn);
+      }
+    }
+
+    // Diagnóstico visible de carga de datos
+    seguro('Diagnóstico de datos', renderEstadoDatos);
+
+    // Si falta algún archivo esencial, avisar de forma visible
+    const faltantes = [];
+    if (DATA.preguntas.length === 0) faltantes.push('data/preguntas.js');
+    if (DATA.comandos.length === 0) faltantes.push('data/comandos.js');
+    if (DATA.calculo.length === 0) faltantes.push('data/calculo.js');
+    if (!DATA.pc3) faltantes.push('data/pc3_referencia.js');
+
+    if (faltantes.length > 0) {
+      mostrarErrorGlobal('No se pudieron cargar estos archivos: <code>' + faltantes.join('</code>, <code>') +
+        '</code>. Abre la página con Live Server desde la carpeta del proyecto o recarga con Ctrl + F5. ' +
+        'También puedes revisar la pestaña <strong>Panel de Progreso</strong>.');
     }
   });
 
@@ -132,9 +417,95 @@
 
         if (targetTab === 'progreso') {
           actualizarPanelProgreso();
+          renderEstadoDatos();
+        }
+
+        if (targetTab === 'comandos') {
+          const termInput = document.getElementById('term-input');
+          if (termInput) setTimeout(() => termInput.focus(), 60);
+        }
+
+        // Mantener visible la pestaña activa cuando la barra hace scroll horizontal
+        try {
+          this.scrollIntoView({ block: 'nearest', inline: 'nearest', behavior: 'smooth' });
+        } catch (e) { /* navegadores antiguos */ }
+
+        // Volver arriba al cambiar de módulo (evita quedar a mitad de una sección larga)
+        const headerOffset = document.querySelector('header.app-header');
+        if (headerOffset) {
+          window.scrollTo({ top: 0, behavior: 'smooth' });
         }
       });
     });
+  }
+
+  // ==========================================
+  // DIAGNÓSTICO DE CARGA DE DATOS
+  // ==========================================
+  function renderEstadoDatos() {
+    const contenedor = document.getElementById('data-status-list');
+    const tarjeta = document.getElementById('data-status-card');
+    if (!contenedor) return;
+
+    const fuentes = [
+      {
+        nombre: 'Banco de preguntas teóricas',
+        archivo: 'data/preguntas.js',
+        cantidad: DATA.preguntas.length,
+        etiqueta: 'preguntas'
+      },
+      {
+        nombre: 'Entrenador de comandos',
+        archivo: 'data/comandos.js',
+        cantidad: DATA.comandos.length,
+        etiqueta: 'ejercicios'
+      },
+      {
+        nombre: 'Ejercicios de cálculo',
+        archivo: 'data/calculo.js',
+        cantidad: DATA.calculo.length,
+        etiqueta: 'generadores'
+      },
+      {
+        nombre: 'PC3 de referencia',
+        archivo: 'data/pc3_referencia.js',
+        cantidad: DATA.pc3 && Array.isArray(DATA.pc3.preguntas) ? DATA.pc3.preguntas.length : 0,
+        etiqueta: 'preguntas escritas'
+      },
+      {
+        nombre: 'Resúmenes teóricos de clase',
+        archivo: 'data/resumenes.js',
+        cantidad: Object.keys(DATA.resumenes || {}).length,
+        etiqueta: 'guías de estudio'
+      }
+    ];
+
+    let hayFallo = false;
+    contenedor.innerHTML = '';
+
+    fuentes.forEach(fuente => {
+      const ok = fuente.cantidad > 0;
+      if (!ok) hayFallo = true;
+      const item = document.createElement('div');
+      item.className = 'data-status-item ' + (ok ? 'ok' : 'bad');
+      item.innerHTML = `<span>${ok ? '&#9989;' : '&#10060;'}</span>` +
+        `<span><strong>${fuente.nombre}</strong><br>` +
+        `<code>${fuente.archivo}</code> &rarr; ${fuente.cantidad} ${fuente.etiqueta}</span>`;
+      contenedor.appendChild(item);
+    });
+
+    const extra = document.createElement('div');
+    extra.className = 'data-status-item ' + (DATA.pc3 && DATA.pc3.comandosDrill && DATA.pc3.comandosDrill.length ? 'ok' : 'bad');
+    const drill = DATA.pc3 && Array.isArray(DATA.pc3.comandosDrill) ? DATA.pc3.comandosDrill.length : 0;
+    if (drill === 0) hayFallo = true;
+    extra.innerHTML = `<span>${drill ? '&#9989;' : '&#10060;'}</span>` +
+      `<span><strong>Comandos drill (PC3)</strong><br><code>pc3_referencia.js</code> &rarr; ${drill} comandos</span>`;
+    contenedor.appendChild(extra);
+
+    if (tarjeta) {
+      tarjeta.style.borderLeftColor = hayFallo ? '#dc2626' : '#16a34a';
+      tarjeta.style.background = hayFallo ? '#fef2f2' : '#f0fdf4';
+    }
   }
 
   // ==========================================
@@ -144,20 +515,33 @@
     const filterSemana = document.getElementById('filter-semana-preguntas');
     const filterTipo = document.getElementById('filter-tipo-preguntas');
     const btnReset = document.getElementById('btn-reset-preguntas');
+    const PREGUNTAS = DATA.preguntas;
+
+    if (!filterSemana || !filterTipo || !btnReset) return;
+
+    if (PREGUNTAS.length === 0) {
+      const container = document.getElementById('preguntas-container');
+      if (container) {
+        container.innerHTML = '<p style="color: var(--danger); padding: 1.5rem; text-align: center; font-weight: 600;">' +
+          'No se cargó el banco de preguntas (data/preguntas.js). Revisa que la carpeta data esté junto a index.html y recarga con Ctrl + F5.</p>';
+      }
+      return;
+    }
 
     function renderizar() {
       const sem = filterSemana.value;
       const tipo = filterTipo.value;
       const container = document.getElementById('preguntas-container');
       const counter = document.getElementById('preguntas-counter');
+      if (!container) return;
 
-      let lista = PREGUNTAS_DATA.filter(p => {
-        const matchSem = sem === 'todas' || p.semana.toString() === sem;
+      let lista = PREGUNTAS.filter(p => {
+        const matchSem = sem === 'todas' || String(p.semana) === sem;
         const matchTipo = tipo === 'todos' || p.tipo === tipo;
         return matchSem && matchTipo;
       });
 
-      counter.textContent = `Mostrando ${lista.length} de ${PREGUNTAS_DATA.length} preguntas`;
+      if (counter) counter.textContent = `Mostrando ${lista.length} de ${PREGUNTAS.length} preguntas`;
       container.innerHTML = '';
 
       if (lista.length === 0) {
@@ -186,10 +570,22 @@
 
         // Renderizado según tipo
         if (p.tipo === 'opcion_multiple' || p.tipo === 'verdadero_falso') {
+          const opciones = Array.isArray(p.opciones) ? p.opciones : [];
+          if (p.tipo === 'opcion_multiple' && opciones.length < 2) {
+            console.warn(`[Pregunta sin opciones válidas] ID: ${p.id}`);
+            const aviso = document.createElement('div');
+            aviso.className = 'inline-notice is-warn';
+            aviso.innerHTML = '<strong>Pregunta incompleta:</strong> no tiene opciones de respuesta configuradas en <code>data/preguntas.js</code>.';
+            card.appendChild(aviso);
+            card.appendChild(feedbackBox);
+            container.appendChild(card);
+            return;
+          }
+
           const optList = document.createElement('div');
           optList.className = 'options-list';
 
-          p.opciones.forEach((optText, optIdx) => {
+          opciones.forEach((optText, optIdx) => {
             const btn = document.createElement('button');
             btn.className = 'option-btn';
             btn.innerHTML = `<span style="font-weight: 700; color: var(--text-muted);">${String.fromCharCode(65 + optIdx)})</span> ${optText}`;
@@ -208,7 +604,9 @@
                 feedbackBox.innerHTML = `<strong>&#10004; ¡Correcto!</strong> ${p.explicacion}`;
               } else {
                 btn.classList.add('selected-wrong');
-                btns[p.respuesta].classList.add('selected-correct');
+                if (btns[p.respuesta]) {
+                  btns[p.respuesta].classList.add('selected-correct');
+                }
                 feedbackBox.className = 'feedback-box show wrong';
                 feedbackBox.innerHTML = `<strong>&#10008; Incorrecto.</strong> ${p.explicacion}`;
               }
@@ -237,22 +635,30 @@
           btnComprobar.className = 'btn btn-primary';
           btnComprobar.textContent = 'Comprobar';
 
+          const rValidas = Array.isArray(p.respuestasValidas) && p.respuestasValidas.length > 0
+            ? p.respuestasValidas
+            : [String(p.respuesta !== undefined ? p.respuesta : (p.correcta !== undefined ? p.correcta : ''))];
+
           btnComprobar.addEventListener('click', function () {
             if (card.classList.contains('answered')) return;
             const val = input.value.trim().toLowerCase();
-            if (!val) return;
+            if (!val) {
+              feedbackBox.className = 'feedback-box show warn';
+              feedbackBox.innerHTML = 'Escribe un término antes de comprobar.';
+              return;
+            }
 
             card.classList.add('answered');
             input.disabled = true;
             btnComprobar.disabled = true;
 
-            const esCorrecto = p.respuestasValidas.some(r => r.toLowerCase() === val);
+            const esCorrecto = rValidas.some(r => r.toLowerCase() === val);
             if (esCorrecto) {
               feedbackBox.className = 'feedback-box show correct';
               feedbackBox.innerHTML = `<strong>&#10004; ¡Correcto!</strong> ${p.explicacion}`;
             } else {
               feedbackBox.className = 'feedback-box show wrong';
-              feedbackBox.innerHTML = `<strong>&#10008; Respuesta incorrecta.</strong> La respuesta esperada era: <code>${p.respuestasValidas[0]}</code>.<br>${p.explicacion}`;
+              feedbackBox.innerHTML = `<strong>&#10008; Respuesta incorrecta.</strong> La respuesta esperada era: <code>${rValidas[0]}</code>.<br>${p.explicacion}`;
             }
             registrarIntento(p.id, p.semana, esCorrecto);
           });
@@ -265,7 +671,7 @@
           const matchContainer = document.createElement('div');
           matchContainer.style.marginBottom = '1rem';
 
-          const pares = p.pares;
+          const pares = Array.isArray(p.pares) ? p.pares : [];
           const opcionesRespuestas = pares.map(item => item.respuesta).sort(() => Math.random() - 0.5);
 
           const grid = document.createElement('div');
@@ -298,7 +704,8 @@
             if (card.classList.contains('answered')) return;
             const completos = selectores.every(s => s.select.value !== '');
             if (!completos) {
-              alert('Por favor seleccione una opción para cada elemento antes de verificar.');
+              feedbackBox.className = 'feedback-box show warn';
+              feedbackBox.innerHTML = 'Selecciona una opción para cada premisa antes de verificar.';
               return;
             }
 
@@ -331,6 +738,12 @@
 
           matchContainer.appendChild(btnValidarMatch);
           card.appendChild(matchContainer);
+        } else {
+          // Soporte tolerante para tipos desconocidos o nuevos
+          const warnDiv = document.createElement('div');
+          warnDiv.style.cssText = 'color: var(--text-muted); font-style: italic; margin-bottom: 0.75rem;';
+          warnDiv.textContent = `Formato de pregunta (${p.tipo || 'desconocido'}) no admitido en este visor.`;
+          card.appendChild(warnDiv);
         }
 
         card.appendChild(feedbackBox);
@@ -340,7 +753,12 @@
 
     filterSemana.addEventListener('change', renderizar);
     filterTipo.addEventListener('change', renderizar);
-    btnReset.addEventListener('click', renderizar);
+    btnReset.addEventListener('click', function () {
+      renderizar();
+      mostrarAviso('preguntas-aviso',
+        'Se reiniciaron las tarjetas de esta vista. Tus estadísticas acumuladas se conservan; ' +
+        'para borrarlas usa el <strong>Panel de Progreso</strong>.', 'success', 6000);
+    });
 
     renderizar();
   }
@@ -356,14 +774,26 @@
     const termInput = document.getElementById('term-input');
     const termHistory = document.getElementById('term-history');
     const feedbackBox = document.getElementById('cmd-feedback');
+    const COMANDOS = DATA.comandos;
 
     const btnPrev = document.getElementById('btn-cmd-prev');
     const btnNext = document.getElementById('btn-cmd-next');
     const btnPista = document.getElementById('btn-cmd-pista');
     const btnSol = document.getElementById('btn-cmd-solucion');
 
+    if (!select || !termInput || !feedbackBox) return;
+
+    if (COMANDOS.length === 0) {
+      const card = document.getElementById('cmd-scenario-card');
+      if (card) {
+        card.innerHTML = '<strong>No se cargaron los ejercicios de comandos</strong> (data/comandos.js). ' +
+          'Verifica la carpeta data y recarga con Ctrl + F5.';
+      }
+      return;
+    }
+
     // Poblar selector de comandos
-    COMANDOS_DATA.forEach((cmd, idx) => {
+    COMANDOS.forEach((cmd, idx) => {
       const opt = document.createElement('option');
       opt.value = idx;
       opt.textContent = `[Semana ${cmd.semana}] ${cmd.tema}: Ejercicio ${idx + 1}`;
@@ -372,11 +802,11 @@
 
     function cargarEjercicio(idx) {
       if (idx < 0) idx = 0;
-      if (idx >= COMANDOS_DATA.length) idx = COMANDOS_DATA.length - 1;
+      if (idx >= COMANDOS.length) idx = COMANDOS.length - 1;
       appState.comandoActualIdx = idx;
       select.value = idx;
 
-      const c = COMANDOS_DATA[idx];
+      const c = COMANDOS[idx];
       metaDiv.textContent = `SEMANA ${c.semana} • ${c.tema}`;
       enunciadoDiv.textContent = c.enunciado;
       promptSpan.textContent = c.prompt;
@@ -387,81 +817,43 @@
 
       feedbackBox.className = 'feedback-box';
       feedbackBox.style.display = 'none';
+      feedbackBox.innerHTML = '';
 
       termHistory.textContent = `Terminal Cisco IOS / Consola activa.\nModo actual: ${c.prompt}\nEscriba la sintaxis y presione [Enter]:`;
     }
 
-    // Normalizador y validador con tolerancia a comandos Cisco
-    function validarComando(inputStr, cmdObj) {
-      const raw = inputStr.trim();
-      if (!raw) return false;
-
-      // 1. Probar patrones Regex oficiales
-      if (cmdObj.patronesValidos && cmdObj.patronesValidos.length > 0) {
-        for (let pat of cmdObj.patronesValidos) {
-          if (pat.test(raw)) return true;
-        }
-      }
-
-      // 2. Normalización de abreviaturas frecuentes de Cisco
-      let norm = raw.toLowerCase().replace(/\s+/g, ' ');
-      let solNorm = cmdObj.solucion.toLowerCase().replace(/\s+/g, ' ');
-
-      if (norm === solNorm) return true;
-
-      // Diccionario de equivalencias
-      const equivalencias = [
-        [/^conf\s+t$/, 'configure terminal'],
-        [/^sh\s+/, 'show '],
-        [/^int\s+/, 'interface '],
-        [/^inter\s+/, 'interface '],
-        [/^g(\d\/\d\/?\d*)/, 'gigabitethernet $1'],
-        [/^f(\d\/\d\/?\d*)/, 'fastethernet $1'],
-        [/^sw\s+mo(de)?\s+acc(ess)?/, 'switchport mode access'],
-        [/^sw\s+acc(ess)?\s+vlan/, 'switchport access vlan'],
-        [/^sw\s+mo(de)?\s+tr(unk)?/, 'switchport mode trunk'],
-        [/^encap\s+dot1q/, 'encapsulation dot1q'],
-        [/^ip\s+add\s+/, 'ip address '],
-        [/^ipv6\s+add\s+/, 'ipv6 address '],
-        [/^no\s+sh$/, 'no shutdown'],
-        [/^ip\s+dhcp\s+excl\s+/, 'ip dhcp excluded-address ']
-      ];
-
-      for (let [regex, rep] of equivalencias) {
-        norm = norm.replace(regex, rep);
-      }
-
-      for (let [regex, rep] of equivalencias) {
-        solNorm = solNorm.replace(regex, rep);
-      }
-
-      return norm === solNorm;
-    }
-
     termInput.addEventListener('keydown', function (e) {
-      if (e.key === 'Enter') {
-        const cmd = COMANDOS_DATA[appState.comandoActualIdx];
-        const val = termInput.value;
-        const esCorrecto = validarComando(val, cmd);
+      if (e.key !== 'Enter') return;
 
-        termHistory.textContent += `\n${cmd.prompt}${val}`;
-
-        if (esCorrecto) {
-          termHistory.textContent += `\n[OK] Comando reconocido y aplicado correctamente.`;
-          feedbackBox.className = 'feedback-box show correct';
-          feedbackBox.innerHTML = `<strong>&#10004; ¡Excelente! Sintaxis correcta:</strong> <code>${cmd.solucion}</code><br>${cmd.explicacion}`;
-          registrarIntento(cmd.id, cmd.semana, true);
-        } else {
-          termHistory.textContent += `\n% Invalid input detected at '^' marker / Comando no reconocido.`;
-          feedbackBox.className = 'feedback-box show wrong';
-          feedbackBox.innerHTML = `<strong>&#10008; Sintaxis incorrecta.</strong> Revise los parámetros requeridos. Puedes presionar <em>Ver Pista</em> si necesitas ayuda.`;
-          registrarIntento(cmd.id, cmd.semana, false);
-        }
-
-        const body = document.getElementById('term-body');
-        body.scrollTop = body.scrollHeight;
-        termInput.value = '';
+      const cmd = COMANDOS[appState.comandoActualIdx];
+      const val = termInput.value;
+      if (!val.trim()) {
+        // No registrar un intento vacío como fallo
+        feedbackBox.className = 'feedback-box show warn';
+        feedbackBox.innerHTML = 'Escribe un comando antes de presionar [Enter].';
+        return;
       }
+
+      const esCorrecto = validarComandoTolerante(val, cmd);
+
+      termHistory.textContent += `\n${cmd.prompt}${val}`;
+      termInput.value = '';
+
+      if (esCorrecto) {
+        termHistory.textContent += `\n[OK] Comando reconocido y aplicado correctamente.`;
+        feedbackBox.className = 'feedback-box show correct';
+        feedbackBox.innerHTML = `<strong>&#10004; ¡Excelente! Sintaxis correcta:</strong> <code>${cmd.solucion}</code><br>${cmd.explicacion}`;
+        registrarIntento(cmd.id, cmd.semana, true);
+      } else {
+        termHistory.textContent += `\n% Invalid input detected at '^' marker / Comando no reconocido.`;
+        feedbackBox.className = 'feedback-box show wrong';
+        feedbackBox.innerHTML = `<strong>&#10008; Sintaxis incorrecta.</strong> Revise los parámetros requeridos. Puedes presionar <em>Ver Pista</em> si necesitas ayuda.`;
+        registrarIntento(cmd.id, cmd.semana, false);
+      }
+
+      const body = document.getElementById('term-body');
+      if (body) body.scrollTop = body.scrollHeight;
+      termInput.focus();
     });
 
     select.addEventListener('change', () => cargarEjercicio(parseInt(select.value, 10)));
@@ -469,12 +861,16 @@
     btnNext.addEventListener('click', () => cargarEjercicio(appState.comandoActualIdx + 1));
 
     btnPista.addEventListener('click', function () {
-      const c = COMANDOS_DATA[appState.comandoActualIdx];
-      alert(`Pista:\n- ${c.pistas.join('\n- ')}`);
+      const c = COMANDOS[appState.comandoActualIdx];
+      const pistas = esArray(c.pistas);
+      feedbackBox.className = 'feedback-box show hint';
+      feedbackBox.innerHTML = `<strong>&#128161; Pista para el ejercicio:</strong><ul style="margin:0.4rem 0 0 1.1rem;">` +
+        pistas.map(p => `<li>${p}</li>`).join('') + '</ul>';
+      feedbackBox.style.display = 'block';
     });
 
     btnSol.addEventListener('click', function () {
-      const c = COMANDOS_DATA[appState.comandoActualIdx];
+      const c = COMANDOS[appState.comandoActualIdx];
       feedbackBox.className = 'feedback-box show correct';
       feedbackBox.innerHTML = `<strong>Solución esperada:</strong> <code>${c.solucion}</code><br><strong>Explicación:</strong> ${c.explicacion}`;
       feedbackBox.style.display = 'block';
@@ -498,9 +894,20 @@
     const feedbackBox = document.getElementById('calc-feedback');
     const pasosBox = document.getElementById('calc-pasos-box');
     const pasosLista = document.getElementById('calc-pasos-lista');
+    const CALCULOS = DATA.calculo;
+
+    if (!select || !btnVerificar || !btnNuevo) return;
+
+    if (CALCULOS.length === 0) {
+      if (enunciadoDiv) {
+        enunciadoDiv.textContent = 'No se cargaron los generadores de cálculo (data/calculo.js). ' +
+          'Verifica la carpeta data y recarga con Ctrl + F5.';
+      }
+      return;
+    }
 
     // Llenar selector
-    CALCULO_DATA.forEach((calc, idx) => {
+    CALCULOS.forEach((calc, idx) => {
       const opt = document.createElement('option');
       opt.value = idx;
       opt.textContent = `[Semana ${calc.semana}] ${calc.titulo}`;
@@ -509,7 +916,7 @@
 
     function generarVariante() {
       const idx = parseInt(select.value, 10);
-      const template = CALCULO_DATA[idx];
+      const template = CALCULOS[idx];
       const instancia = template.generar();
 
       appState.calculoActual = {
@@ -526,9 +933,10 @@
 
       feedbackBox.className = 'feedback-box';
       feedbackBox.style.display = 'none';
+      feedbackBox.innerHTML = '';
       pasosBox.style.display = 'none';
 
-      pasosLista.innerHTML = instancia.pasos.map(p => `<li>${p}</li>`).join('');
+      pasosLista.innerHTML = esArray(instancia.pasos).map(p => `<li>${p}</li>`).join('');
     }
 
     btnNuevo.addEventListener('click', generarVariante);
@@ -541,7 +949,9 @@
       const val = input.value.trim();
 
       if (!val) {
-        alert('Por favor ingrese un resultado antes de verificar.');
+        feedbackBox.className = 'feedback-box show warn';
+        feedbackBox.innerHTML = 'Ingresa un resultado antes de verificar.';
+        feedbackBox.style.display = 'block';
         return;
       }
 
@@ -577,6 +987,14 @@
       }
     });
 
+    // Enter en el input también verifica
+    input.addEventListener('keydown', function (e) {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        btnVerificar.click();
+      }
+    });
+
     generarVariante();
   }
 
@@ -593,34 +1011,47 @@
     const btnFinalizar = document.getElementById('btn-finalizar-simulacro');
     const btnReintentar = document.getElementById('btn-reintentar-simulacro');
     const btnVerFallos = document.getElementById('btn-ver-fallos-simulacro');
+    const avisoBox = document.getElementById('simulacro-aviso');
 
     const timerSpan = document.getElementById('simulacro-timer');
     const preguntasLista = document.getElementById('simulacro-preguntas-lista');
     const revisionContainer = document.getElementById('simulacro-revision-container');
+
+    if (!btnIniciar || !btnFinalizar) return;
 
     btnIniciar.addEventListener('click', function () {
       iniciarSimulacro(parseInt(selectTiempo.value, 10));
     });
 
     btnFinalizar.addEventListener('click', function () {
-      if (confirm('¿Estás seguro de que deseas finalizar y calificar tu examen?')) {
-        finalizarSimulacro();
-      }
+      confirmarEnBoton(btnFinalizar, '¿Entregar? Haz clic otra vez', function () {
+        finalizarSimulacro(false);
+      });
     });
 
     btnReintentar.addEventListener('click', function () {
       resultadoDiv.style.display = 'none';
       configDiv.style.display = 'block';
+      activoDiv.style.display = 'none';
     });
 
     btnVerFallos.addEventListener('click', function () {
-      revisionContainer.scrollIntoView({ behavior: 'smooth' });
+      try {
+        revisionContainer.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      } catch (e) { /* navegadores antiguos */ }
     });
 
     function iniciarSimulacro(minutos) {
       configDiv.style.display = 'none';
       resultadoDiv.style.display = 'none';
       activoDiv.style.display = 'block';
+      ocultarAviso(avisoBox);
+      revisionContainer.innerHTML = '';
+
+      // Restaurar el botón de finalizar si quedó en modo confirmación
+      btnFinalizar.dataset.confirmando = '0';
+      btnFinalizar.classList.remove('is-confirming');
+      btnFinalizar.textContent = btnFinalizar.dataset.textoOriginal || 'Finalizar y Calificar';
 
       appState.simulacro.activo = true;
       appState.simulacro.calificado = false;
@@ -633,21 +1064,30 @@
       let examSet = [];
 
       for (let s = 11; s <= 15; s++) {
-        const teoricasSemana = PREGUNTAS_DATA.filter(p => p.semana === s).sort(() => Math.random() - 0.5);
+        const teoricasSemana = mezclarArray(DATA.preguntas.filter(p => Number(p.semana) === s));
         if (teoricasSemana[0]) examSet.push({ tipoItem: 'teoria', data: teoricasSemana[0] });
         if (teoricasSemana[1]) examSet.push({ tipoItem: 'teoria', data: teoricasSemana[1] });
 
-        const cmdSemana = COMANDOS_DATA.filter(c => c.semana === s).sort(() => Math.random() - 0.5);
+        const cmdSemana = mezclarArray(DATA.comandos.filter(c => Number(c.semana) === s));
         if (cmdSemana[0]) examSet.push({ tipoItem: 'comando', data: cmdSemana[0] });
       }
 
       // 5 ejercicios de cálculo
-      const calcMezclados = CALCULO_DATA.slice().sort(() => Math.random() - 0.5);
-      for (let i = 0; i < 5; i++) {
-        if (calcMezclados[i]) {
+      const calcMezclados = mezclarArray(DATA.calculo.slice());
+      for (let i = 0; i < 5 && i < calcMezclados.length; i++) {
+        try {
           const inst = calcMezclados[i].generar();
           examSet.push({ tipoItem: 'calculo', data: calcMezclados[i], instancia: inst });
+        } catch (e) {
+          console.warn('No se pudo generar un ejercicio de cálculo para el simulacro:', e);
         }
+      }
+
+      if (examSet.length === 0) {
+        activoDiv.style.display = 'none';
+        configDiv.style.display = 'block';
+        mostrarAviso(avisoBox, 'No hay datos suficientes para generar el simulacro. Revisa el <strong>Panel de Progreso</strong> para ver el estado de carga.', 'error');
+        return;
       }
 
       appState.simulacro.preguntas = examSet;
@@ -656,6 +1096,7 @@
       // Temporizador
       if (appState.simulacro.timerInterval) {
         clearInterval(appState.simulacro.timerInterval);
+        appState.simulacro.timerInterval = null;
       }
 
       if (minutos > 0) {
@@ -666,17 +1107,28 @@
           actualizarTimerUI();
           if (appState.simulacro.segundosRestantes <= 0) {
             clearInterval(appState.simulacro.timerInterval);
-            alert('¡El tiempo del examen ha finalizado! Se procederá a calificar.');
-            finalizarSimulacro();
+            appState.simulacro.timerInterval = null;
+            mostrarAviso(avisoBox, '&#9201; ¡El tiempo del examen ha finalizado! Se calificó automáticamente tu simulacro.', 'warn');
+            finalizarSimulacro(true);
           }
         }, 1000);
       } else {
-        timerSpan.textContent = 'Sin límite';
+        appState.simulacro.segundosRestantes = 0;
+        if (timerSpan) {
+          timerSpan.textContent = 'Sin límite';
+          timerSpan.style.color = '#38bdf8';
+        }
       }
+
+      // Llevar al inicio del examen
+      try {
+        activoDiv.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      } catch (e) { /* navegadores antiguos */ }
     }
 
     function actualizarTimerUI() {
-      const seg = appState.simulacro.segundosRestantes;
+      if (!timerSpan) return;
+      const seg = Math.max(0, appState.simulacro.segundosRestantes);
       const m = Math.floor(seg / 60);
       const s = seg % 60;
       timerSpan.textContent = `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
@@ -711,7 +1163,7 @@
           if (item.data.tipo === 'opcion_multiple' || item.data.tipo === 'verdadero_falso') {
             const list = document.createElement('div');
             list.className = 'options-list';
-            item.data.opciones.forEach((op, opIdx) => {
+            (item.data.opciones || []).forEach((op, opIdx) => {
               const label = document.createElement('label');
               label.style.display = 'flex';
               label.style.alignItems = 'center';
@@ -725,8 +1177,7 @@
               list.appendChild(label);
             });
             card.appendChild(list);
-          } else {
-            // Completar
+          } else if (item.data.tipo === 'completar') {
             const input = document.createElement('input');
             input.type = 'text';
             input.className = 'input-text';
@@ -736,6 +1187,45 @@
               appState.simulacro.respuestasUsuario[idx] = this.value;
             });
             card.appendChild(input);
+          } else if (item.data.tipo === 'relacionar') {
+            const matchContainer = document.createElement('div');
+            matchContainer.style.marginBottom = '0.75rem';
+
+            const pares = Array.isArray(item.data.pares) ? item.data.pares : [];
+            const opcionesRespuestas = mezclarArray(pares.map(p => p.respuesta));
+
+            const grid = document.createElement('div');
+            grid.className = 'match-grid';
+
+            pares.forEach((par, pIdx) => {
+              const itemDiv = document.createElement('div');
+              itemDiv.className = 'match-item';
+              itemDiv.innerHTML = `<span><strong>${par.premisa}</strong></span>`;
+
+              const select = document.createElement('select');
+              select.className = 'filter-select';
+              select.innerHTML = '<option value="">-- Seleccionar --</option>' +
+                opcionesRespuestas.map(op => `<option value="${op}">${op}</option>`).join('');
+
+              select.addEventListener('change', function () {
+                if (!appState.simulacro.respuestasUsuario[idx] || typeof appState.simulacro.respuestasUsuario[idx] !== 'object') {
+                  appState.simulacro.respuestasUsuario[idx] = {};
+                }
+                appState.simulacro.respuestasUsuario[idx][pIdx] = this.value;
+              });
+
+              itemDiv.appendChild(select);
+              grid.appendChild(itemDiv);
+            });
+
+            matchContainer.appendChild(grid);
+            card.appendChild(matchContainer);
+          } else {
+            const warnBox = document.createElement('div');
+            warnBox.className = 'inline-notice is-warn';
+            warnBox.style.display = 'block';
+            warnBox.innerHTML = `<strong>Aviso:</strong> Formato de pregunta desconocido (${item.data.tipo || 'no especificado'}).`;
+            card.appendChild(warnBox);
           }
 
         } else if (item.tipoItem === 'comando') {
@@ -797,34 +1287,74 @@
       appState.simulacro.preguntas.forEach((item, idx) => {
         const numPto = idx + 1;
         const rUser = appState.simulacro.respuestasUsuario[idx];
+        let puntajeItem = 0;
         let esCorrecto = false;
         let respuestaEsperadaTxt = '';
+        let tuRespuestaTxt = '';
         let explicacionTxt = '';
 
         if (item.tipoItem === 'teoria') {
           explicacionTxt = item.data.explicacion;
           if (item.data.tipo === 'opcion_multiple' || item.data.tipo === 'verdadero_falso') {
             esCorrecto = rUser === item.data.respuesta;
-            respuestaEsperadaTxt = item.data.opciones[item.data.respuesta];
+            puntajeItem = esCorrecto ? 1.0 : 0.0;
+            const elegida = (item.data.opciones && item.data.opciones[rUser] !== undefined)
+              ? item.data.opciones[rUser]
+              : '(Sin responder)';
+            tuRespuestaTxt = `<code>${elegida}</code>`;
+            respuestaEsperadaTxt = (item.data.opciones && item.data.opciones[item.data.respuesta] !== undefined)
+              ? `<code>${item.data.opciones[item.data.respuesta]}</code>`
+              : `<code>Opción ${item.data.respuesta}</code>`;
           } else if (item.data.tipo === 'completar') {
-            esCorrecto = rUser && item.data.respuestasValidas.some(r => r.toLowerCase() === rUser.trim().toLowerCase());
-            respuestaEsperadaTxt = item.data.respuestasValidas[0];
+            const valList = Array.isArray(item.data.respuestasValidas) && item.data.respuestasValidas.length > 0
+              ? item.data.respuestasValidas
+              : [String(item.data.respuesta !== undefined ? item.data.respuesta : '')];
+            esCorrecto = Boolean(rUser && valList.some(r => r.toLowerCase() === rUser.trim().toLowerCase()));
+            puntajeItem = esCorrecto ? 1.0 : 0.0;
+            tuRespuestaTxt = `<code>${rUser !== undefined && rUser !== '' ? rUser : '(Sin responder)'}</code>`;
+            respuestaEsperadaTxt = `<code>${valList[0]}</code>`;
+          } else if (item.data.tipo === 'relacionar') {
+            const pares = Array.isArray(item.data.pares) ? item.data.pares : [];
+            let aciertosPares = 0;
+            const respUserObj = (rUser && typeof rUser === 'object') ? rUser : {};
+            const revisionPares = pares.map((par, pIdx) => {
+              const elegida = respUserObj[pIdx] || '(Sin seleccionar)';
+              const acerto = elegida === par.respuesta;
+              if (acerto) aciertosPares++;
+              return `<li><strong>${par.premisa}</strong> &rarr; tu respuesta: <code>${elegida}</code> ${acerto ? '&#10004;' : '&#10008;'} (Correcta: <code>${par.respuesta}</code>)</li>`;
+            });
+            puntajeItem = pares.length > 0 ? (aciertosPares / pares.length) : 0;
+            esCorrecto = pares.length > 0 && aciertosPares === pares.length;
+            tuRespuestaTxt = `Pares acertados: <strong>${aciertosPares} de ${pares.length}</strong>`;
+            respuestaEsperadaTxt = `<ul style="margin:0.25rem 0 0 1rem; padding-left:0.5rem;">${revisionPares.join('')}</ul>`;
+          } else {
+            esCorrecto = false;
+            puntajeItem = 0.0;
+            tuRespuestaTxt = `Formato desconocido (${item.data.tipo || 'desconocido'})`;
+            respuestaEsperadaTxt = 'No evaluable';
           }
         } else if (item.tipoItem === 'comando') {
           explicacionTxt = item.data.explicacion;
-          respuestaEsperadaTxt = item.data.solucion;
+          respuestaEsperadaTxt = `<code>${item.data.solucion}</code>`;
           if (rUser) {
+            tuRespuestaTxt = `<code>${rUser}</code>`;
             const raw = rUser.trim();
             if (item.data.patronesValidos && item.data.patronesValidos.some(p => p.test(raw))) {
               esCorrecto = true;
             } else if (raw.toLowerCase() === item.data.solucion.toLowerCase()) {
               esCorrecto = true;
+            } else {
+              esCorrecto = validarComandoTolerante(raw, item.data);
             }
+          } else {
+            tuRespuestaTxt = '<code>(Sin responder)</code>';
           }
+          puntajeItem = esCorrecto ? 1.0 : 0.0;
         } else if (item.tipoItem === 'calculo') {
-          explicacionTxt = item.instancia.pasos.join('<br>');
-          respuestaEsperadaTxt = `${item.instancia.respuestaCorrecta} ${item.instancia.unidad || ''}`;
+          explicacionTxt = Array.isArray(item.instancia.pasos) ? item.instancia.pasos.join('<br>') : '';
+          respuestaEsperadaTxt = `<code>${item.instancia.respuestaCorrecta} ${item.instancia.unidad || ''}</code>`;
           if (rUser) {
+            tuRespuestaTxt = `<code>${rUser}</code>`;
             if (typeof item.instancia.validador === 'function') {
               esCorrecto = item.instancia.validador(rUser);
             } else if (item.instancia.tipoInput === 'numero') {
@@ -834,24 +1364,24 @@
             } else {
               esCorrecto = rUser.trim().toLowerCase() === item.instancia.respuestaCorrecta.toString().toLowerCase();
             }
+          } else {
+            tuRespuestaTxt = '<code>(Sin responder)</code>';
           }
+          puntajeItem = esCorrecto ? 1.0 : 0.0;
         }
 
-        if (esCorrecto) {
-          puntaje += 1.0;
-        }
-
+        puntaje += puntajeItem;
         registrarIntento(`sim-${idx}`, item.data.semana, esCorrecto);
 
         // Bloque de revisión
         revisionHtml += `
-          <div class="card" style="border-left: 4px solid ${esCorrecto ? 'var(--success)' : 'var(--danger)'}; margin-bottom: 1rem;">
+          <div class="card" style="border-left: 4px solid ${puntajeItem >= 1.0 ? 'var(--success)' : (puntajeItem > 0 ? 'var(--warning)' : 'var(--danger)')}; margin-bottom: 1rem;">
             <div style="display:flex; justify-content:space-between; font-weight:700; margin-bottom:0.25rem;">
               <span>Pregunta ${numPto} (${item.tipoItem.toUpperCase()} - SEMANA ${item.data.semana})</span>
-              <span style="color:${esCorrecto ? 'var(--success)' : 'var(--danger)'};">${esCorrecto ? '+1.0 Pto (Correcto)' : '0.0 Ptos (Incorrecto)'}</span>
+              <span style="color:${puntajeItem >= 1.0 ? 'var(--success)' : (puntajeItem > 0 ? 'var(--warning)' : 'var(--danger)')};">${puntajeItem >= 1.0 ? '+1.0 Pto (Correcto)' : (puntajeItem > 0 ? `+${puntajeItem.toFixed(2)} Ptos (Parcial)` : '0.0 Ptos (Incorrecto)')}</span>
             </div>
-            <p style="font-size:0.92rem; margin-bottom:0.5rem;"><strong>Tu respuesta:</strong> <code>${rUser !== undefined ? rUser : '(Sin responder)'}</code></p>
-            <p style="font-size:0.92rem; margin-bottom:0.5rem; color:#1e293b;"><strong>Solución esperada:</strong> <code>${respuestaEsperadaTxt}</code></p>
+            <p style="font-size:0.92rem; margin-bottom:0.5rem;"><strong>Tu respuesta:</strong> ${tuRespuestaTxt}</p>
+            <div style="font-size:0.92rem; margin-bottom:0.5rem; color:#1e293b;"><strong>Solución esperada:</strong> ${respuestaEsperadaTxt}</div>
             <div style="background:#f8fafc; padding:0.75rem; border-radius:6px; font-size:0.88rem; color:var(--text-muted); border:1px solid var(--border);">
               <strong>Explicación:</strong><br>${explicacionTxt}
             </div>
@@ -899,7 +1429,11 @@
 
     btnResetStats.addEventListener('click', function () {
       if (confirm('¿Deseas reiniciar todas tus estadísticas acumuladas? Esta acción no se puede deshacer.')) {
-        localStorage.removeItem(STORAGE_KEY);
+        try {
+          localStorage.removeItem(STORAGE_KEY);
+        } catch (e) {
+          console.warn('Error al limpiar localStorage:', e);
+        }
         appState.stats = {
           total: 0,
           aciertos: 0,
@@ -980,7 +1514,7 @@
         let totalPuntos = 0;
         if (typeof PC3_REF_DATA !== 'undefined' && Array.isArray(PC3_REF_DATA.preguntas)) {
           PC3_REF_DATA.preguntas.forEach(p => {
-            p.puntosClave.forEach(pt => {
+            (p.puntosClave || []).forEach(pt => {
               if (rubricSaved[pt.id]) {
                 totalPuntos += pt.valor;
               }
@@ -999,43 +1533,192 @@
         pc3RefRespEl.textContent = `${respCount} / 4`;
 
         const cmdStats = JSON.parse(localStorage.getItem('pc3ref_cmd_stats') || '{"aciertos":0}');
-        const totalCmds = typeof PC3_REF_DATA !== 'undefined' ? PC3_REF_DATA.comandosDrill.length : 10;
+        const totalCmds = (typeof PC3_REF_DATA !== 'undefined' && Array.isArray(PC3_REF_DATA.comandosDrill)) ? PC3_REF_DATA.comandosDrill.length : 10;
         pc3RefCmdsEl.textContent = `${cmdStats.aciertos || 0} / ${totalCmds}`;
       } catch (e) {
         console.warn('Error leyendo stats de pc3ref:', e);
       }
+    }
+
+    const btnRepasarFallos = document.getElementById('btn-repasar-fallos');
+    if (btnRepasarFallos) {
+      const cantFallos = Array.isArray(appState.stats.fallosIds) ? appState.stats.fallosIds.length : 0;
+      btnRepasarFallos.innerHTML = `&#128260; Repasar Solo Mis Fallos (${cantFallos})`;
+      btnRepasarFallos.disabled = cantFallos === 0;
     }
   }
 
   function mostrarRevisionFallos() {
     const fallosBox = document.getElementById('fallos-review-box');
     const fallosList = document.getElementById('fallos-list-container');
+    if (!fallosBox || !fallosList) return;
     fallosBox.style.display = 'block';
     fallosList.innerHTML = '';
 
-    const preguntasFalladas = PREGUNTAS_DATA.filter(p => appState.stats.fallosIds.includes(p.id));
+    const fallosIds = esArray(appState.stats.fallosIds);
 
-    if (preguntasFalladas.length === 0) {
-      fallosList.innerHTML = '<p style="color:var(--text-muted);">Los fallos registrados corresponden a comandos o simulacros previos.</p>';
+    if (fallosIds.length === 0) {
+      fallosList.innerHTML = '<p style="color:var(--text-muted); padding:1rem; text-align:center;">¡No tienes fallos registrados! Tu historial está limpio.</p>';
       return;
     }
 
-    preguntasFalladas.forEach(p => {
+    const heading = document.createElement('div');
+    heading.style.cssText = 'font-size:0.95rem; font-weight:700; color:var(--danger); margin-bottom:1rem;';
+    heading.textContent = `Mostrando ${fallosIds.length} ejercicio(s) con fallos registrados:`;
+    fallosList.appendChild(heading);
+
+    fallosIds.forEach((falloId) => {
+      // 1. Buscar en DATA.preguntas (fusionadas)
+      const p = DATA.preguntas.find(item => item.id === falloId);
+      if (p) {
+        let respCorrectaTxt = '';
+        if (p.opciones && p.opciones[p.respuesta] !== undefined) {
+          respCorrectaTxt = p.opciones[p.respuesta];
+        } else if (p.respuestasValidas && p.respuestasValidas[0]) {
+          respCorrectaTxt = p.respuestasValidas.join(' / ');
+        } else if (p.pares && Array.isArray(p.pares)) {
+          respCorrectaTxt = p.pares.map(pr => `${pr.premisa} &rarr; ${pr.respuesta}`).join('<br>');
+        } else {
+          respCorrectaTxt = p.respuesta !== undefined ? p.respuesta : 'Consultar solución';
+        }
+
+        const card = document.createElement('div');
+        card.className = 'card';
+        card.style.borderLeft = '4px solid var(--danger)';
+        card.style.marginBottom = '1rem';
+        card.innerHTML = `
+          <div class="q-meta">
+            <span class="tag-week">SEMANA ${p.semana}</span>
+            <span class="tag-topic">Teoría: ${p.tema}</span>
+            <span style="margin-left:auto; font-size:0.75rem; color:var(--text-muted);">ID: ${p.id}</span>
+          </div>
+          <div class="q-text">${p.enunciado}</div>
+          <div style="background:var(--success-bg); border:1px solid #bbf7d0; padding:0.75rem; border-radius:6px; font-size:0.9rem; margin-top:0.5rem; color:#166534;">
+            <strong>Respuesta correcta:</strong><br>${respCorrectaTxt}<br><br>
+            <strong>Explicación:</strong> ${p.explicacion}
+          </div>
+        `;
+        fallosList.appendChild(card);
+        return;
+      }
+
+      // 2. Buscar en DATA.comandos
+      const c = DATA.comandos.find(item => item.id === falloId);
+      if (c) {
+        const card = document.createElement('div');
+        card.className = 'card';
+        card.style.borderLeft = '4px solid #0284c7';
+        card.style.marginBottom = '1rem';
+        card.innerHTML = `
+          <div class="q-meta">
+            <span class="tag-week">SEMANA ${c.semana}</span>
+            <span class="tag-topic">Comando: ${c.tema}</span>
+            <span style="margin-left:auto; font-size:0.75rem; color:var(--text-muted);">ID: ${c.id}</span>
+          </div>
+          <div class="q-text"><strong>[Prompt: <code>${c.prompt}</code>]</strong> ${c.enunciado}</div>
+          <div style="background:#f0f9ff; border:1px solid #bae6fd; padding:0.75rem; border-radius:6px; font-size:0.9rem; margin-top:0.5rem; color:#0369a1;">
+            <strong>Comando Correcto:</strong> <code>${c.solucion}</code><br><br>
+            <strong>Explicación técnica:</strong> ${c.explicacion}
+          </div>
+        `;
+        fallosList.appendChild(card);
+        return;
+      }
+
+      // 3. Buscar en DATA.calculo
+      const calc = DATA.calculo.find(item => item.id === falloId);
+      if (calc) {
+        let ejemplo;
+        try { ejemplo = calc.generar(); } catch (e) {}
+        const pasosHtml = (ejemplo && Array.isArray(ejemplo.pasos))
+          ? `<ol style="margin:0.4rem 0 0 1.2rem; line-height:1.5;">${ejemplo.pasos.map(ps => `<li>${ps}</li>`).join('')}</ol>`
+          : 'Revisa la fórmula en el generador de cálculo.';
+
+        const card = document.createElement('div');
+        card.className = 'card';
+        card.style.borderLeft = '4px solid #8b5cf6';
+        card.style.marginBottom = '1rem';
+        card.innerHTML = `
+          <div class="q-meta">
+            <span class="tag-week">SEMANA ${calc.semana}</span>
+            <span class="tag-topic">Cálculo: ${calc.titulo}</span>
+            <span style="margin-left:auto; font-size:0.75rem; color:var(--text-muted);">ID: ${calc.id}</span>
+          </div>
+          <div class="q-text">${ejemplo ? ejemplo.enunciado : calc.titulo}</div>
+          <div style="background:#faf5ff; border:1px solid #e9d5ff; padding:0.75rem; border-radius:6px; font-size:0.9rem; margin-top:0.5rem; color:#6b21a8;">
+            <strong>Solución Paso a Paso:</strong>
+            ${pasosHtml}
+          </div>
+        `;
+        fallosList.appendChild(card);
+        return;
+      }
+
+      // 4. Buscar en DATA.pc3 (comandos drill)
+      if (DATA.pc3 && Array.isArray(DATA.pc3.comandosDrill)) {
+        const d = DATA.pc3.comandosDrill.find(item => item.id === falloId);
+        if (d) {
+          const solTexto = d.tipo === 'escribir' ? d.comandoCorrecto : d.palabraFaltante;
+          const card = document.createElement('div');
+          card.className = 'card';
+          card.style.borderLeft = '4px solid #f59e0b';
+          card.style.marginBottom = '1rem';
+          card.innerHTML = `
+            <div class="q-meta">
+              <span class="tag-week">PC3 Referencia</span>
+              <span class="tag-topic">Comando Drill: ${d.categoria}</span>
+              <span style="margin-left:auto; font-size:0.75rem; color:var(--text-muted);">ID: ${d.id}</span>
+            </div>
+            <div class="q-text">${d.enunciado}</div>
+            <div style="background:#fffbeb; border:1px solid #fde68a; padding:0.75rem; border-radius:6px; font-size:0.9rem; margin-top:0.5rem; color:#92400e;">
+              <strong>Solución oficial:</strong> <code>${solTexto}</code><br><br>
+              <strong>Propósito:</strong> ${d.explicacion}
+            </div>
+          `;
+          fallosList.appendChild(card);
+          return;
+        }
+      }
+
+      // 5. Fallos del simulacro en sesión activa
+      if (falloId.startsWith('sim-')) {
+        const simIdx = parseInt(falloId.replace('sim-', ''), 10);
+        const simPreg = appState.simulacro.preguntas && appState.simulacro.preguntas[simIdx];
+        if (simPreg) {
+          const card = document.createElement('div');
+          card.className = 'card';
+          card.style.borderLeft = '4px solid var(--danger)';
+          card.style.marginBottom = '1rem';
+          card.innerHTML = `
+            <div class="q-meta">
+              <span class="tag-week">SEMANA ${simPreg.data.semana}</span>
+              <span class="tag-topic">Simulacro: ${simPreg.tipoItem.toUpperCase()}</span>
+              <span style="margin-left:auto; font-size:0.75rem; color:var(--text-muted);">ID: ${falloId}</span>
+            </div>
+            <div class="q-text">${simPreg.tipoItem === 'calculo' ? simPreg.instancia.enunciado : simPreg.data.enunciado}</div>
+            <div style="background:var(--danger-bg); border:1px solid #fecaca; padding:0.75rem; border-radius:6px; font-size:0.9rem; margin-top:0.5rem; color:#991b1b;">
+              Pregunta errada en el último simulacro rendido.
+            </div>
+          `;
+          fallosList.appendChild(card);
+          return;
+        }
+      }
+
+      // 6. ID no encontrado
       const card = document.createElement('div');
       card.className = 'card';
-      card.style.borderLeft = '4px solid var(--danger)';
+      card.style.borderLeft = '4px solid var(--warning)';
       card.style.marginBottom = '1rem';
-
       card.innerHTML = `
         <div class="q-meta">
-          <span class="tag-week">SEMANA ${p.semana}</span>
-          <span class="tag-topic">${p.tema}</span>
+          <span class="tag-topic">Registro Histórico</span>
+          <span style="margin-left:auto; font-size:0.75rem; color:var(--text-muted);">ID: ${falloId}</span>
         </div>
-        <div class="q-text">${p.enunciado}</div>
-        <div style="background:var(--success-bg); border:1px solid #bbf7d0; padding:0.75rem; border-radius:6px; font-size:0.9rem; margin-top:0.5rem; color:#166534;">
-          <strong>Respuesta correcta:</strong> ${p.opciones ? p.opciones[p.respuesta] : p.respuestasValidas[0]}<br>
-          <strong>Explicación:</strong> ${p.explicacion}
-        </div>
+        <div class="q-text">Ejercicio no disponible (id: <code>${falloId}</code>)</div>
+        <p style="font-size:0.85rem; color:var(--text-muted); margin-top:0.35rem;">
+          Este registro corresponde a un ejercicio o variante generada en una sesión anterior.
+        </p>
       `;
       fallosList.appendChild(card);
     });
@@ -1061,26 +1744,63 @@
     function actualizarListaFlashcards() {
       const sem = filterSem.value;
       let items = [];
+      const idsVistos = new Set();
 
-      // Extraer tanto de PREGUNTAS_DATA como de COMANDOS_DATA
-      PREGUNTAS_DATA.forEach(p => {
+      // 1. Extraer de DATA.preguntas (incluye las 7 nuevas integradas)
+      DATA.preguntas.forEach(p => {
+        if (!p || idsVistos.has(p.id)) return;
         if (sem === 'todas' || p.semana.toString() === sem) {
+          idsVistos.add(p.id);
+          let rCard = '';
+          if (p.opciones && p.opciones[p.respuesta] !== undefined) {
+            rCard = p.opciones[p.respuesta];
+          } else if (p.respuestasValidas && p.respuestasValidas[0]) {
+            rCard = p.respuestasValidas[0];
+          } else if (p.pares && Array.isArray(p.pares)) {
+            rCard = p.pares.map(pr => `${pr.premisa} &rarr; ${pr.respuesta}`).join('<br>');
+          } else {
+            rCard = p.respuesta !== undefined ? p.respuesta : 'Ver concepto';
+          }
+
           items.push({
+            id: p.id,
             semana: p.semana,
-            tema: p.tema,
+            tema: `Teoría: ${p.tema}`,
             pregunta: p.enunciado,
-            respuesta: `<strong>Respuesta:</strong> ${p.opciones ? p.opciones[p.respuesta] : (p.respuestasValidas ? p.respuestasValidas[0] : 'Ver concepto')}<br><br><strong>Explicación:</strong> ${p.explicacion}`
+            respuesta: `<strong>Respuesta:</strong> ${rCard}<br><br><strong>Explicación:</strong> ${p.explicacion}`
           });
         }
       });
 
-      COMANDOS_DATA.forEach(c => {
+      // 2. Extraer de DATA.comandos
+      DATA.comandos.forEach(c => {
+        if (!c || idsVistos.has(c.id)) return;
         if (sem === 'todas' || c.semana.toString() === sem) {
+          idsVistos.add(c.id);
           items.push({
+            id: c.id,
             semana: c.semana,
             tema: `Comando: ${c.tema}`,
             pregunta: `[${c.prompt}] ${c.enunciado}`,
             respuesta: `<strong>Comando Cisco:</strong> <code>${c.solucion}</code><br><br><strong>Propósito:</strong> ${c.explicacion}`
+          });
+        }
+      });
+
+      // 3. Extraer conceptos y fórmulas de DATA.calculo
+      DATA.calculo.forEach(calc => {
+        if (!calc || idsVistos.has(calc.id)) return;
+        if (sem === 'todas' || calc.semana.toString() === sem) {
+          idsVistos.add(calc.id);
+          let ej;
+          try { ej = calc.generar(); } catch (e) {}
+          const pasosTxt = (ej && Array.isArray(ej.pasos)) ? ej.pasos.join('<br>') : '';
+          items.push({
+            id: calc.id,
+            semana: calc.semana,
+            tema: `Fórmula / Cálculo: ${calc.tema}`,
+            pregunta: `¿Cuál es el método y fórmula para resolver: "${calc.titulo}"?`,
+            respuesta: `<strong>Método y Fórmula Aplicada:</strong><br>${pasosTxt || calc.titulo}`
           });
         }
       });
@@ -1091,7 +1811,13 @@
     }
 
     function mostrarCard(idx) {
-      if (appState.flashcards.lista.length === 0) return;
+      if (appState.flashcards.lista.length === 0) {
+        tagEl.textContent = 'SIN ELEMENTOS';
+        indexEl.textContent = '0 / 0';
+        pregEl.textContent = 'No hay tarjetas para el filtro seleccionado.';
+        respEl.innerHTML = '';
+        return;
+      }
       if (idx < 0) idx = 0;
       if (idx >= appState.flashcards.lista.length) idx = appState.flashcards.lista.length - 1;
 
@@ -1198,8 +1924,11 @@
     });
 
     container.innerHTML = '';
+    const preguntas = (typeof PC3_REF_DATA !== 'undefined' && Array.isArray(PC3_REF_DATA.preguntas))
+      ? PC3_REF_DATA.preguntas
+      : [];
 
-    PC3_REF_DATA.preguntas.forEach(p => {
+    preguntas.forEach(p => {
       const card = document.createElement('div');
       card.className = 'pc3ref-q-card';
       card.setAttribute('data-qid', p.id);
@@ -1210,7 +1939,7 @@
 
       // Calcular puntos actuales en rúbrica de esta pregunta
       let pScore = 0;
-      p.puntosClave.forEach(pt => {
+      (p.puntosClave || []).forEach(pt => {
         if (rubricGuardada[pt.id]) pScore += pt.valor;
       });
 
@@ -1228,6 +1957,14 @@
         <div class="pc3ref-q-contexto">
           <strong>Topología y Contexto:</strong> ${p.contexto}
         </div>
+        ${p.id === 'p4' ? `
+        <div class="topology-svg-container" style="margin: 0.85rem 0; padding: 0.75rem; background: #ffffff; border: 1px solid #cbd5e1; border-radius: 8px;">
+          <div style="font-size: 0.85rem; font-weight: 700; color: #1e3a8a; margin-bottom: 0.5rem; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 0.5rem;">
+            <span>🗺️ Diagrama Vectorial de la Topología Oficial (Pregunta 4)</span>
+            <span style="font-size: 0.75rem; background: #fef08a; color: #854d0e; padding: 2px 6px; border-radius: 4px; border: 1px solid #eab308; font-weight: 700;">Etiquetas VERIFICAR = Hipótesis no confirmadas</span>
+          </div>
+          ${generarSvgTopologiaPC3()}
+        </div>` : ''}
 
         <!-- EDITOR DE RESPUESTA A MANO -->
         <div class="written-editor-wrapper">
@@ -1242,8 +1979,12 @@
           </div>
         </div>
 
+        <div style="font-size:0.83rem; color:#475569; margin-top:0.45rem; margin-bottom:0.35rem; display:flex; align-items:center; gap:0.35rem;">
+          <span>&#128161;</span> <em>Al terminar de escribir, despliega la respuesta modelo, la rúbrica y los errores típicos.</em>
+        </div>
+
         <!-- BOTÓN DESPLEGABLE SOLUCIÓN Y RÚBRICA -->
-        <div style="display:flex; gap:0.6rem; flex-wrap:wrap; margin-top:0.75rem;">
+        <div style="display:flex; gap:0.6rem; flex-wrap:wrap; margin-top:0.5rem;">
           <button class="btn btn-primary btn-sm btn-toggle-model" data-target="model-content-${p.id}">
             &#128065; Ver Respuesta Modelo, Rúbrica y Evidencias
           </button>
@@ -1262,7 +2003,7 @@
               Marca las casillas que hayas incluido con claridad en tu respuesta escrita:
             </div>
             <div class="rubric-checklist" id="rubric-list-${p.id}">
-              ${p.puntosClave.map(pt => `
+              ${(p.puntosClave || []).map(pt => `
                 <label class="rubric-item">
                   <input type="checkbox" class="rubric-checkbox" data-qid="${p.id}" data-pid="${pt.id}" data-val="${pt.valor}" ${rubricGuardada[pt.id] ? 'checked' : ''}>
                   <span><strong>(+${pt.valor.toFixed(1)} pt)</strong> ${pt.texto}</span>
@@ -1365,6 +2106,38 @@
     });
 
     actualizarPuntajesRubrica();
+
+    // Interruptor: Mostrar todas las soluciones y rúbricas
+    const chkMostrarSol = document.getElementById('chk-pc3ref-mostrar-soluciones');
+    let mostrarTodasSol = false;
+    try {
+      mostrarTodasSol = localStorage.getItem('pc3ref_mostrar_soluciones') === 'true';
+    } catch (e) {}
+
+    function aplicarVisibilidadSoluciones(forzarMostrar) {
+      preguntas.forEach(p => {
+        const modelContent = container.querySelector(`#model-content-${p.id}`);
+        const btnToggle = container.querySelector(`[data-target="model-content-${p.id}"]`);
+        if (modelContent) modelContent.style.display = forzarMostrar ? 'block' : 'none';
+        if (btnToggle) {
+          btnToggle.innerHTML = forzarMostrar
+            ? '&#128064; Ocultar Respuesta Modelo y Rúbrica'
+            : '&#128065; Ver Respuesta Modelo, Rúbrica y Evidencias';
+        }
+      });
+    }
+
+    if (chkMostrarSol) {
+      chkMostrarSol.checked = mostrarTodasSol;
+      aplicarVisibilidadSoluciones(mostrarTodasSol);
+      chkMostrarSol.addEventListener('change', function () {
+        const estado = this.checked;
+        try {
+          localStorage.setItem('pc3ref_mostrar_soluciones', estado ? 'true' : 'false');
+        } catch (e) {}
+        aplicarVisibilidadSoluciones(estado);
+      });
+    }
   }
 
   function actualizarPuntajesRubrica() {
@@ -1376,10 +2149,13 @@
     }
 
     let totalGlobal = 0;
+    const preguntas = (typeof PC3_REF_DATA !== 'undefined' && Array.isArray(PC3_REF_DATA.preguntas))
+      ? PC3_REF_DATA.preguntas
+      : [];
 
-    PC3_REF_DATA.preguntas.forEach(p => {
+    preguntas.forEach(p => {
       let pScore = 0;
-      p.puntosClave.forEach(pt => {
+      (p.puntosClave || []).forEach(pt => {
         if (rubricGuardada[pt.id]) {
           pScore += pt.valor;
         }
@@ -1480,7 +2256,11 @@
     if (!container) return;
     container.innerHTML = '';
 
-    PC3_REF_DATA.plantillas.forEach(pl => {
+    const plantillas = (typeof PC3_REF_DATA !== 'undefined' && Array.isArray(PC3_REF_DATA.plantillas))
+      ? PC3_REF_DATA.plantillas
+      : [];
+
+    plantillas.forEach(pl => {
       const card = document.createElement('div');
       card.className = 'plantilla-card';
       card.innerHTML = `
@@ -1559,7 +2339,10 @@
 
     function renderDrill() {
       container.innerHTML = '';
-      const lista = PC3_REF_DATA.comandosDrill.filter(c => c.tipo === modoActual);
+      const todosCmds = (typeof PC3_REF_DATA !== 'undefined' && Array.isArray(PC3_REF_DATA.comandosDrill))
+        ? PC3_REF_DATA.comandosDrill
+        : [];
+      const lista = todosCmds.filter(c => c.tipo === modoActual);
 
       let cmdStats = {};
       try {
@@ -1567,6 +2350,19 @@
       } catch (e) {
         cmdStats = { aciertos: 0, ids: [] };
       }
+
+      const idsAcertados = Array.isArray(cmdStats.ids) ? cmdStats.ids : [];
+      const escribirCmds = todosCmds.filter(c => c.tipo === 'escribir');
+      const completarCmds = todosCmds.filter(c => c.tipo === 'completar');
+      const aciertoEscribir = escribirCmds.filter(c => idsAcertados.includes(c.id)).length;
+      const aciertoCompletar = completarCmds.filter(c => idsAcertados.includes(c.id)).length;
+
+      const summaryBadge = document.getElementById('drill-summary-badge');
+      if (summaryBadge) {
+        summaryBadge.textContent = `10 ejercicios: 5 escribir (${aciertoEscribir}/5) + 5 completar (${aciertoCompletar}/5) | Superados: ${idsAcertados.length}/10`;
+      }
+      if (btnModoEscribir) btnModoEscribir.textContent = `Modo Escribe el Comando (${aciertoEscribir}/5)`;
+      if (btnModoCompletar) btnModoCompletar.textContent = `Modo Completa el Comando (${aciertoCompletar}/5)`;
 
       lista.forEach((item, idx) => {
         const card = document.createElement('div');
@@ -1671,6 +2467,16 @@
                 localStorage.setItem('pc3ref_cmd_stats', JSON.stringify(cmdStats));
               } catch (e) {}
               actualizarPanelProgreso();
+
+              const todos = (typeof PC3_REF_DATA !== 'undefined' && Array.isArray(PC3_REF_DATA.comandosDrill)) ? PC3_REF_DATA.comandosDrill : [];
+              const esc = todos.filter(c => c.tipo === 'escribir');
+              const comp = todos.filter(c => c.tipo === 'completar');
+              const acEsc = esc.filter(c => cmdStats.ids.includes(c.id)).length;
+              const acComp = comp.filter(c => cmdStats.ids.includes(c.id)).length;
+              const sBadge = document.getElementById('drill-summary-badge');
+              if (sBadge) sBadge.textContent = `10 ejercicios: 5 escribir (${acEsc}/5) + 5 completar (${acComp}/5) | Superados: ${cmdStats.ids.length}/10`;
+              if (btnModoEscribir) btnModoEscribir.textContent = `Modo Escribe el Comando (${acEsc}/5)`;
+              if (btnModoCompletar) btnModoCompletar.textContent = `Modo Completa el Comando (${acComp}/5)`;
             }
           } else {
             fbEl.innerHTML = `<span style="color:var(--danger); font-weight:700;">&#10060; Comando incorrecto.</span> Revisa la sintaxis, abreviaciones o prueba el botón "Ver Solución".`;
@@ -1755,7 +2561,9 @@
     }
 
     // IMPRESIÓN 1: EXAMEN EN BLANCO CON RENGLONES
-    btnPrintExam.addEventListener('click', function () {
+    const screenExamPreview = document.getElementById('screen-exam-preview');
+
+    function generarHtmlExamenEnBlanco() {
       let variante = null;
       try {
         const v = localStorage.getItem('pc3ref_variante');
@@ -1775,12 +2583,12 @@
             </div>
           </div>
           <div class="print-header-row">
-            <div class="print-header-cell"><strong>Alumno:</strong> ................................................................................................</div>
+            <div class="print-header-cell"><strong>Alumno:</strong> ${variante ? variante.alumno.nombreCompleto : '................................................................................................'}</div>
             <div class="print-header-cell"><strong>Código / DNI:</strong> .................................</div>
           </div>
           <div class="print-header-row">
-            <div class="print-header-cell"><strong>Sede:</strong> .................................... &nbsp; <strong>Sección:</strong> ................ &nbsp; <strong>Turno:</strong> ..........</div>
-            <div class="print-header-cell"><strong>Fecha:</strong> ...... / ...... / 2026 &nbsp; <strong>Fila:</strong> ÚNICA</div>
+            <div class="print-header-cell"><strong>Sede:</strong> LIMA CENTRO &nbsp; <strong>Sección:</strong> UTP-RED1 &nbsp; <strong>Turno:</strong> REGULAR</div>
+            <div class="print-header-cell"><strong>Fecha:</strong> 22 / 11 / 2026 &nbsp; <strong>Fila:</strong> ÚNICA</div>
           </div>
           <div class="print-header-row">
             <div class="print-header-cell" colspan="2" style="font-size:8.5pt; color:#444; border-bottom:none;">
@@ -1790,7 +2598,11 @@
         </div>
       `;
 
-      PC3_REF_DATA.preguntas.forEach((p, idx) => {
+      const preguntasExam = (typeof PC3_REF_DATA !== 'undefined' && Array.isArray(PC3_REF_DATA.preguntas))
+        ? PC3_REF_DATA.preguntas
+        : [];
+
+      preguntasExam.forEach((p, idx) => {
         html += `
           <div class="print-q-block">
             <div class="print-q-title">${p.titulo}</div>
@@ -1798,8 +2610,6 @@
             <div style="font-size:9pt; color:#555; margin-bottom:6px;"><strong>Contexto:</strong> ${p.contexto}</div>
             <div style="font-size:9pt; font-weight:bold; margin-top:8px;">Espacio para respuesta escrita (Pasos, Valores, Comandos y Qué se ve en pantalla):</div>
             <div class="print-ruled-lines">
-              <div class="print-rule-line"></div>
-              <div class="print-rule-line"></div>
               <div class="print-rule-line"></div>
               <div class="print-rule-line"></div>
               <div class="print-rule-line"></div>
@@ -1840,7 +2650,15 @@
         </div>
       `;
 
-      printArea.innerHTML = html;
+      return html;
+    }
+
+    if (screenExamPreview) {
+      screenExamPreview.innerHTML = generarHtmlExamenEnBlanco();
+    }
+
+    btnPrintExam.addEventListener('click', function () {
+      printArea.innerHTML = generarHtmlExamenEnBlanco();
       window.print();
     });
 
@@ -1862,7 +2680,11 @@
         </div>
       `;
 
-      PC3_REF_DATA.preguntas.forEach((p, idx) => {
+      const preguntasSol = (typeof PC3_REF_DATA !== 'undefined' && Array.isArray(PC3_REF_DATA.preguntas))
+        ? PC3_REF_DATA.preguntas
+        : [];
+
+      preguntasSol.forEach((p, idx) => {
         html += `
           <div class="print-q-block">
             <div class="print-q-title">${p.titulo}</div>
@@ -1870,7 +2692,7 @@
             
             <div style="margin-top:6px; font-size:9.5pt; background:#f5f5f5; padding:6px; border-left:3px solid #000;">
               <strong>Rúbrica de Evaluación (1.0 pt por cada punto clave):</strong><br>
-              ${p.puntosClave.map(pt => `[ &nbsp; ] (+${pt.valor.toFixed(1)} pt) ${pt.texto}<br>`).join('')}
+              ${(p.puntosClave || []).map(pt => `[ &nbsp; ] (+${pt.valor.toFixed(1)} pt) ${pt.texto}<br>`).join('')}
             </div>
 
             <div style="margin-top:8px; font-size:9.5pt;">
@@ -1892,6 +2714,423 @@
       printArea.innerHTML = html;
       window.print();
     });
+  }
+
+  // Fin de inicialización PC3 Referencia
+
+  // ==========================================
+  // DIAGRAMA DE TOPOLOGÍA SVG (PREGUNTA 4 PC3)
+  // ==========================================
+  function generarSvgTopologiaPC3() {
+    return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 490" width="100%" height="auto" style="min-width: 680px; max-width: 960px; font-family: ui-sans-serif, system-ui, -apple-system, sans-serif;">
+  <defs>
+    <filter id="shadow" x="-5%" y="-5%" width="110%" height="115%">
+      <feDropShadow dx="0" dy="2" stdDeviation="2" flood-color="#000" flood-opacity="0.1"/>
+    </filter>
+  </defs>
+
+  <!-- FONDO Y ZONAS -->
+  <rect width="960" height="490" fill="#f8fafc" rx="8" />
+  
+  <!-- ZONA LAN 1 (IZQUIERDA) -->
+  <rect x="15" y="15" width="460" height="420" fill="#eff6ff" rx="8" stroke="#bfdbfe" stroke-width="1.5" stroke-dasharray="4 4" />
+  <text x="30" y="40" font-size="13" font-weight="700" fill="#1e40af">RED LAN 1: 192.168.X.0 /24</text>
+  <text x="30" y="56" font-size="10.5" fill="#3b82f6">Default Gateway: 192.168.X.254 (Fa0/0)</text>
+
+  <!-- ZONA LAN 2 (DERECHA) -->
+  <rect x="620" y="15" width="325" height="420" fill="#faf5ff" rx="8" stroke="#e9d5ff" stroke-width="1.5" stroke-dasharray="4 4" />
+  <text x="635" y="40" font-size="13" font-weight="700" fill="#6b21a8">RED LAN 2: 192.169.1.0 /24</text>
+  <rect x="805" y="27" width="70" height="18" fill="#fef08a" rx="4" stroke="#eab308" />
+  <text x="812" y="40" font-size="9" font-weight="700" fill="#854d0e">VERIFICAR</text>
+  <text x="635" y="56" font-size="10.5" fill="#7c3aed">Default Gateway: 192.169.1.1 (Fa0/1)</text>
+
+  <!-- ENLACES LAN 1 -->
+  <line x1="120" y1="105" x2="230" y2="175" stroke="#64748b" stroke-width="2" />
+  <text x="145" y="145" font-size="9" fill="#475569">Fa0/24</text>
+
+  <line x1="120" y1="210" x2="230" y2="185" stroke="#64748b" stroke-width="2" />
+  <text x="145" y="195" font-size="9" fill="#475569">Fa0/23</text>
+
+  <line x1="260" y1="95" x2="260" y2="165" stroke="#64748b" stroke-width="2" />
+  <text x="264" y="125" font-size="9" fill="#475569">Fa0</text>
+
+  <line x1="370" y1="95" x2="290" y2="170" stroke="#64748b" stroke-width="2" />
+  <text x="325" y="130" font-size="9" fill="#475569">Fa0</text>
+
+  <line x1="260" y1="205" x2="260" y2="285" stroke="#0284c7" stroke-width="2.5" stroke-dasharray="3 3" />
+  <text x="265" y="245" font-size="9" font-weight="700" fill="#0284c7">Troncal/Enlace SW1-SW2</text>
+
+  <line x1="190" y1="365" x2="240" y2="305" stroke="#64748b" stroke-width="2" />
+  <text x="195" y="330" font-size="9" fill="#475569">Fa0/1</text>
+
+  <line x1="330" y1="365" x2="280" y2="305" stroke="#64748b" stroke-width="2" />
+  <text x="315" y="330" font-size="9" fill="#475569">Fa0/2</text>
+
+  <line x1="290" y1="185" x2="500" y2="215" stroke="#0f172a" stroke-width="2.5" />
+  <text x="380" y="195" font-size="9.5" font-weight="700" fill="#0f172a">Fa0/0 (192.168.X.254)</text>
+
+  <line x1="560" y1="215" x2="710" y2="195" stroke="#0f172a" stroke-width="2.5" />
+  <text x="575" y="195" font-size="9.5" font-weight="700" fill="#6b21a8">Fa0/1 (192.169.1.1)</text>
+
+  <!-- ENLACES LAN 2 -->
+  <line x1="770" y1="180" x2="840" y2="110" stroke="#64748b" stroke-width="2" />
+  <text x="800" y="145" font-size="9" fill="#475569">Fa0/2</text>
+
+  <line x1="770" y1="200" x2="840" y2="200" stroke="#64748b" stroke-width="2" />
+  <text x="795" y="193" font-size="9" fill="#475569">Fa0/3</text>
+
+  <line x1="770" y1="215" x2="840" y2="295" stroke="#64748b" stroke-width="2" />
+  <text x="800" y="260" font-size="9" fill="#475569">Fa0/4</text>
+
+  <!-- DISPOSITIVOS LAN 1 -->
+  <!-- Servidor 1 -->
+  <g filter="url(#shadow)">
+    <rect x="30" y="80" width="115" height="50" rx="6" fill="#1e40af" stroke="#1d4ed8" />
+    <text x="87" y="100" font-size="11" font-weight="700" fill="#fff" text-anchor="middle">SERVIDOR 1</text>
+    <text x="87" y="113" font-size="8.5" fill="#bfdbfe" text-anchor="middle">DNS + Web + DHCP</text>
+    <text x="87" y="124" font-size="8.5" font-weight="700" fill="#facc15" text-anchor="middle">192.168.X.1</text>
+  </g>
+
+  <!-- Servidor 2 -->
+  <g filter="url(#shadow)">
+    <rect x="30" y="180" width="115" height="50" rx="6" fill="#1e40af" stroke="#1d4ed8" />
+    <text x="87" y="200" font-size="11" font-weight="700" fill="#fff" text-anchor="middle">SERVIDOR 2</text>
+    <text x="87" y="213" font-size="8.5" fill="#bfdbfe" text-anchor="middle">Email (SMTP/POP3)</text>
+    <text x="87" y="224" font-size="8.5" font-weight="700" fill="#facc15" text-anchor="middle">192.168.X.2</text>
+  </g>
+
+  <!-- PC1 -->
+  <g filter="url(#shadow)">
+    <rect x="220" y="50" width="80" height="42" rx="5" fill="#0284c7" stroke="#0369a1" />
+    <text x="260" y="68" font-size="10" font-weight="700" fill="#fff" text-anchor="middle">PC1</text>
+    <text x="260" y="82" font-size="8" fill="#e0f2fe" text-anchor="middle">Web DNS 1</text>
+  </g>
+
+  <!-- PC2 -->
+  <g filter="url(#shadow)">
+    <rect x="330" y="50" width="80" height="42" rx="5" fill="#0284c7" stroke="#0369a1" />
+    <text x="370" y="68" font-size="10" font-weight="700" fill="#fff" text-anchor="middle">PC2</text>
+    <text x="370" y="82" font-size="8" fill="#e0f2fe" text-anchor="middle">Mail Client r1</text>
+  </g>
+
+  <!-- Switch 1 (Superior) -->
+  <g filter="url(#shadow)">
+    <rect x="225" y="165" width="70" height="38" rx="4" fill="#0f766e" stroke="#115e59" />
+    <text x="260" y="182" font-size="9.5" font-weight="700" fill="#fff" text-anchor="middle">SWITCH 1</text>
+    <text x="260" y="195" font-size="8" fill="#ccfbf1" text-anchor="middle">2960-24TT</text>
+  </g>
+
+  <!-- Switch 2 (Inferior) -->
+  <g filter="url(#shadow)">
+    <rect x="225" y="285" width="70" height="38" rx="4" fill="#0f766e" stroke="#115e59" />
+    <text x="260" y="302" font-size="9.5" font-weight="700" fill="#fff" text-anchor="middle">SWITCH 2</text>
+    <text x="260" y="315" font-size="8" fill="#ccfbf1" text-anchor="middle">2960-24TT</text>
+  </g>
+
+  <!-- PC4 -->
+  <g filter="url(#shadow)">
+    <rect x="150" y="365" width="80" height="42" rx="5" fill="#0284c7" stroke="#0369a1" />
+    <text x="190" y="383" font-size="10" font-weight="700" fill="#fff" text-anchor="middle">PC4</text>
+    <text x="190" y="397" font-size="8" fill="#e0f2fe" text-anchor="middle">Web DNS 2</text>
+  </g>
+
+  <!-- PC3 -->
+  <g filter="url(#shadow)">
+    <rect x="290" y="365" width="85" height="42" rx="5" fill="#0284c7" stroke="#0369a1" />
+    <text x="332" y="383" font-size="10" font-weight="700" fill="#fff" text-anchor="middle">PC3 (DHCP)</text>
+    <text x="332" y="397" font-size="8" fill="#e0f2fe" text-anchor="middle">Mail Client r2</text>
+  </g>
+
+  <!-- ROUTER 2811 (CENTRO) -->
+  <g filter="url(#shadow)">
+    <circle cx="530" cy="215" r="32" fill="#4f46e5" stroke="#3730a3" stroke-width="2" />
+    <text x="530" y="212" font-size="10" font-weight="700" fill="#fff" text-anchor="middle">ROUTER</text>
+    <text x="530" y="225" font-size="9" font-weight="600" fill="#c7d2fe" text-anchor="middle">CISCO 2811</text>
+  </g>
+
+  <!-- DISPOSITIVOS LAN 2 -->
+  <!-- Switch 3 -->
+  <g filter="url(#shadow)">
+    <rect x="700" y="180" width="70" height="38" rx="4" fill="#0f766e" stroke="#115e59" />
+    <text x="735" y="197" font-size="9.5" font-weight="700" fill="#fff" text-anchor="middle">SWITCH 3</text>
+    <text x="735" y="210" font-size="8" fill="#ccfbf1" text-anchor="middle">2960-24TT</text>
+  </g>
+
+  <!-- Teléfono IP 1 -->
+  <g filter="url(#shadow)">
+    <rect x="830" y="80" width="105" height="46" rx="5" fill="#d97706" stroke="#b45309" />
+    <text x="882" y="98" font-size="9.5" font-weight="700" fill="#fff" text-anchor="middle">TELÉFONO IP 1</text>
+    <text x="882" y="110" font-size="8.5" fill="#fef3c7" text-anchor="middle">IP 7960 • Ext: 1000</text>
+    <text x="882" y="121" font-size="7.5" font-weight="700" fill="#fde047" text-anchor="middle">VERIFICAR VoIP</text>
+  </g>
+
+  <!-- Teléfono IP 2 -->
+  <g filter="url(#shadow)">
+    <rect x="830" y="175" width="105" height="46" rx="5" fill="#d97706" stroke="#b45309" />
+    <text x="882" y="193" font-size="9.5" font-weight="700" fill="#fff" text-anchor="middle">TELÉFONO IP 2</text>
+    <text x="882" y="205" font-size="8.5" fill="#fef3c7" text-anchor="middle">IP 7960 • Ext: 2000</text>
+    <text x="882" y="216" font-size="7.5" font-weight="700" fill="#fde047" text-anchor="middle">VERIFICAR VoIP</text>
+  </g>
+
+  <!-- Laptop -->
+  <g filter="url(#shadow)">
+    <rect x="830" y="270" width="105" height="46" rx="5" fill="#059669" stroke="#047857" />
+    <text x="882" y="288" font-size="9.5" font-weight="700" fill="#fff" text-anchor="middle">LAPTOP (L1)</text>
+    <text x="882" y="300" font-size="8.5" fill="#d1fae5" text-anchor="middle">192.169.1.X</text>
+    <text x="882" y="311" font-size="7.5" font-weight="700" fill="#fde047" text-anchor="middle">VERIFICAR IP</text>
+  </g>
+
+  <!-- LEYENDA INFERIOR -->
+  <rect x="25" y="445" width="910" height="35" rx="6" fill="#ffffff" stroke="#e2e8f0" />
+  <circle cx="45" cy="462" r="5" fill="#1e40af" />
+  <text x="56" y="466" font-size="9" fill="#334155">Servidores</text>
+
+  <circle cx="130" cy="462" r="5" fill="#0284c7" />
+  <text x="141" y="466" font-size="9" fill="#334155">PCs LAN 1</text>
+
+  <circle cx="215" cy="462" r="5" fill="#0f766e" />
+  <text x="226" y="466" font-size="9" fill="#334155">Switches 2960</text>
+
+  <circle cx="315" cy="462" r="5" fill="#4f46e5" />
+  <text x="326" y="466" font-size="9" fill="#334155">Router 2811</text>
+
+  <circle cx="410" cy="462" r="5" fill="#d97706" />
+  <text x="421" y="466" font-size="9" fill="#334155">Teléfonos IP 7960</text>
+
+  <circle cx="530" cy="462" r="5" fill="#059669" />
+  <text x="541" y="466" font-size="9" fill="#334155">Laptop L1</text>
+
+  <rect x="615" y="454" width="55" height="16" fill="#fef08a" rx="3" stroke="#eab308" />
+  <text x="622" y="466" font-size="8.5" font-weight="700" fill="#854d0e">VERIFICAR</text>
+  <text x="677" y="466" font-size="9" fill="#64748b">= Hipótesis no confirmada en sílabo o valor ilegible en hoja impresa</text>
+</svg>`;
+  }
+
+  // ==========================================
+  // MODULO: RESÚMENES TEÓRICOS (MARKDOWN MIN)
+  // ==========================================
+  function escaparHtml(text) {
+    return String(text || '')
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#039;');
+  }
+
+  function formatMarkdownInline(str) {
+    return String(str || '')
+      .replace(/`([^`]+)`/g, '<code style="background:#f1f5f9; color:#0f172a; padding:2px 5px; border-radius:4px; font-size:0.86rem; font-family:monospace;">$1</code>')
+      .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
+      .replace(/__([^_]+)__/g, '<strong>$1</strong>')
+      .replace(/\*([^*]+)\*/g, '<em>$1</em>')
+      .replace(/_([^_]+)_/g, '<em>$1</em>');
+  }
+
+  function renderMarkdownMinimo(md) {
+    if (!md) return '<p style="color:var(--text-muted); font-style:italic;">No hay contenido disponible para esta semana.</p>';
+
+    const codeBlocks = [];
+    let text = escaparHtml(md);
+
+    // Extraer bloques de código con ```
+    text = text.replace(/```([a-z0-9_-]*)\n([\s\S]*?)```/gi, function(match, lang, code) {
+      const idx = codeBlocks.length;
+      codeBlocks.push('<pre style="background:#0f172a; color:#f8fafc; padding:0.85rem 1rem; border-radius:6px; overflow-x:auto; font-size:0.88rem; line-height:1.45; margin:0.85rem 0;"><code>' + code.trim() + '</code></pre>');
+      return '__CODE_BLOCK_' + idx + '__';
+    });
+
+    const lines = text.split('\n');
+    const out = [];
+    let inList = false;
+    let listType = 'ul';
+    let inTable = false;
+    let tableHeaderDone = false;
+
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i].trim();
+
+      if (line.startsWith('__CODE_BLOCK_') && line.endsWith('__')) {
+        if (inList) { out.push('</' + listType + '>'); inList = false; }
+        if (inTable) { out.push('</tbody></table></div>'); inTable = false; }
+        out.push(line);
+        continue;
+      }
+
+      // Tablas Markdown (| ... |)
+      if (line.startsWith('|') && line.endsWith('|')) {
+        if (inList) { out.push('</' + listType + '>'); inList = false; }
+        const cells = line.split('|').slice(1, -1).map(c => c.trim());
+        if (cells.every(c => /^:?-+:?$/.test(c))) {
+          tableHeaderDone = true;
+          continue;
+        }
+        if (!inTable) {
+          inTable = true;
+          tableHeaderDone = false;
+          out.push('<div style="overflow-x:auto; margin:1rem 0;"><table style="width:100%; border-collapse:collapse; font-size:0.88rem; border:1px solid #cbd5e1;">');
+        }
+        if (!tableHeaderDone) {
+          out.push('<thead style="background:#f1f5f9;"><tr>' + cells.map(c => '<th style="border:1px solid #cbd5e1; padding:0.5rem 0.75rem; text-align:left;">' + formatMarkdownInline(c) + '</th>').join('') + '</tr></thead><tbody>');
+        } else {
+          out.push('<tr>' + cells.map(c => '<td style="border:1px solid #cbd5e1; padding:0.45rem 0.75rem;">' + formatMarkdownInline(c) + '</td>').join('') + '</tr>');
+        }
+        continue;
+      } else if (inTable) {
+        out.push('</tbody></table></div>');
+        inTable = false;
+      }
+
+      if (!line) {
+        if (inList) { out.push('</' + listType + '>'); inList = false; }
+        continue;
+      }
+
+      if (line.startsWith('#### ')) {
+        if (inList) { out.push('</' + listType + '>'); inList = false; }
+        out.push('<h4 style="font-size:1rem; font-weight:700; color:#1e293b; margin:1.25rem 0 0.5rem 0;">' + formatMarkdownInline(line.slice(5)) + '</h4>');
+        continue;
+      }
+      if (line.startsWith('### ')) {
+        if (inList) { out.push('</' + listType + '>'); inList = false; }
+        out.push('<h3 style="font-size:1.15rem; font-weight:700; color:var(--primary); margin:1.35rem 0 0.5rem 0;">' + formatMarkdownInline(line.slice(4)) + '</h3>');
+        continue;
+      }
+      if (line.startsWith('## ')) {
+        if (inList) { out.push('</' + listType + '>'); inList = false; }
+        out.push('<h2 style="font-size:1.3rem; font-weight:700; color:var(--secondary); margin:1.5rem 0 0.6rem 0; border-bottom:1px solid #e2e8f0; padding-bottom:0.35rem;">' + formatMarkdownInline(line.slice(3)) + '</h2>');
+        continue;
+      }
+      if (line.startsWith('# ')) {
+        if (inList) { out.push('</' + listType + '>'); inList = false; }
+        out.push('<h1 style="font-size:1.5rem; font-weight:800; color:var(--primary); margin:1.5rem 0 0.75rem 0;">' + formatMarkdownInline(line.slice(2)) + '</h1>');
+        continue;
+      }
+
+      if (/^---$|^\*\*\*$|^___$/.test(line)) {
+        if (inList) { out.push('</' + listType + '>'); inList = false; }
+        out.push('<hr style="border:none; border-top:1px solid #cbd5e1; margin:1.25rem 0;">');
+        continue;
+      }
+
+      if (line.startsWith('&gt;') || line.startsWith('>')) {
+        if (inList) { out.push('</' + listType + '>'); inList = false; }
+        const clean = line.replace(/^(&gt;|>)\s?/, '');
+        out.push('<blockquote style="border-left:4px solid var(--primary); padding:0.5rem 1rem; margin:0.75rem 0; background:#f0f9ff; color:#0369a1; border-radius:4px;">' + formatMarkdownInline(clean) + '</blockquote>');
+        continue;
+      }
+
+      if (/^[-*+]\s+/.test(line)) {
+        if (!inList || listType !== 'ul') {
+          if (inList) out.push('</' + listType + '>');
+          out.push('<ul style="margin:0.5rem 0 0.75rem 1.4rem; padding-left:0.5rem; line-height:1.6;">');
+          inList = true;
+          listType = 'ul';
+        }
+        out.push('<li>' + formatMarkdownInline(line.replace(/^[-*+]\s+/, '')) + '</li>');
+        continue;
+      }
+      if (/^\d+\.\s+/.test(line)) {
+        if (!inList || listType !== 'ol') {
+          if (inList) out.push('</' + listType + '>');
+          out.push('<ol style="margin:0.5rem 0 0.75rem 1.4rem; padding-left:0.5rem; line-height:1.6;">');
+          inList = true;
+          listType = 'ol';
+        }
+        out.push('<li>' + formatMarkdownInline(line.replace(/^\d+\.\s+/, '')) + '</li>');
+        continue;
+      }
+
+      if (inList) { out.push('</' + listType + '>'); inList = false; }
+      out.push('<p style="margin-bottom:0.75rem; line-height:1.6;">' + formatMarkdownInline(line) + '</p>');
+    }
+
+    if (inList) out.push('</' + listType + '>');
+    if (inTable) out.push('</tbody></table></div>');
+
+    let html = out.join('\n');
+    codeBlocks.forEach(function(cb, idx) {
+      html = html.replace('__CODE_BLOCK_' + idx + '__', cb);
+    });
+
+    return html;
+  }
+
+  function resaltarTextoEnHtml(html, termino) {
+    if (!termino || termino.trim().length < 2) return { html: html, count: 0 };
+    const q = termino.trim();
+    const escaped = q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const regex = /((?:<[^>]+>)*)([^<]+)/g;
+    let count = 0;
+    const targetRegex = new RegExp('(' + escaped + ')', 'gi');
+    const resultado = html.replace(regex, function(match, tags, text) {
+      if (!text) return match;
+      const nuevoTexto = text.replace(targetRegex, function(m) {
+        count++;
+        return '<mark class="resumen-search-match">' + m + '</mark>';
+      });
+      return (tags || '') + nuevoTexto;
+    });
+    return { html: resultado, count: count };
+  }
+
+  function initModuloResumenes() {
+    const selectSemana = document.getElementById('select-resumen-semana');
+    const inputBuscar = document.getElementById('input-buscar-resumen');
+    const container = document.getElementById('resumen-contenido-box');
+    const titleEl = document.getElementById('resumen-titulo');
+    const badgeArchivo = document.getElementById('resumen-badge-archivo');
+    const searchStatus = document.getElementById('resumen-search-status');
+
+    if (!container || !selectSemana) return;
+
+    function renderizarSemanaActual() {
+      const clave = selectSemana.value;
+      const query = inputBuscar ? inputBuscar.value.trim() : '';
+      const datos = DATA.resumenes && DATA.resumenes[clave];
+
+      if (!datos) {
+        if (titleEl) titleEl.textContent = 'Semana ' + clave;
+        if (badgeArchivo) badgeArchivo.textContent = '';
+        if (searchStatus) searchStatus.textContent = '';
+        container.innerHTML = '<p style="color:var(--danger); padding:1rem;">⚠️ El resumen para esta semana no está disponible en <code>data/resumenes.js</code>.</p>';
+        return;
+      }
+
+      if (titleEl) titleEl.textContent = datos.titulo || ('Resumen Semana ' + clave);
+      if (badgeArchivo) badgeArchivo.textContent = datos.archivo ? 'content/' + datos.archivo : '';
+
+      const htmlBase = renderMarkdownMinimo(datos.markdown);
+      if (query && query.length >= 2) {
+        const busqueda = resaltarTextoEnHtml(htmlBase, query);
+        container.innerHTML = busqueda.html;
+        if (searchStatus) {
+          if (busqueda.count > 0) {
+            searchStatus.textContent = busqueda.count + ' coincidencia' + (busqueda.count > 1 ? 's' : '') + ' encontrada' + (busqueda.count > 1 ? 's' : '');
+            searchStatus.style.color = '#15803d';
+          } else {
+            searchStatus.textContent = 'Sin coincidencias en esta semana';
+            searchStatus.style.color = '#b91c1c';
+          }
+        }
+      } else {
+        container.innerHTML = htmlBase;
+        if (searchStatus) searchStatus.textContent = '';
+      }
+    }
+
+    selectSemana.addEventListener('change', function() {
+      if (inputBuscar) inputBuscar.value = '';
+      renderizarSemanaActual();
+    });
+
+    if (inputBuscar) {
+      inputBuscar.addEventListener('input', function() {
+        renderizarSemanaActual();
+      });
+    }
+
+    renderizarSemanaActual();
   }
 
   // Fin de inicialización PC3 Referencia

@@ -632,6 +632,7 @@ const PC3_REF_DATA = {
         "Services > HTTP > index.html"
       ],
       correcta: 1,
+      respuesta: 1,
       explicacion: "En Packet Tracer los servicios de red se gestionan en la pestaña 'Services'. El servicio DNS contiene la tabla 'Resource Records' donde se ingresa el nombre, el tipo (A Record) y la IP.",
       cita: "Semana 13 / 14: Configuración de Servicios de Capa de Aplicación en Packet Tracer"
     },
@@ -647,6 +648,7 @@ const PC3_REF_DATA = {
         "DORA handshake completed."
       ],
       correcta: 1,
+      respuesta: 1,
       explicacion: "En Cisco Packet Tracer, al seleccionar el botón de opción DHCP, el software emite 'DHCP request successful.' si la negociación DORA culminó con un DHCPACK. Si falla, indica 'DHCP failed. APIPA is being used.'",
       cita: "Semana 14: Protocolo DHCP y Prácticas de Laboratorio"
     },
@@ -662,6 +664,7 @@ const PC3_REF_DATA = {
         "Incoming: HTTP (TCP 80) | Outgoing: FTP (TCP 21)"
       ],
       correcta: 1,
+      respuesta: 1,
       explicacion: "POP3 (Post Office Protocol v3) opera en TCP 110 para descargar el correo del servidor (Incoming), mientras que SMTP (Simple Mail Transfer Protocol) opera en TCP 25 para remitir correos hacia el servidor (Outgoing).",
       cita: "Semana 14: Protocolos de Correo Electrónico (SMTP, POP3, IMAP)"
     },
@@ -677,6 +680,7 @@ const PC3_REF_DATA = {
         "Porque el switch del otro extremo debe estar configurado en modo VTP Server."
       ],
       correcta: 1,
+      respuesta: 1,
       explicacion: "A diferencia de los switches donde los puertos están activos ('no shutdown') por defecto, en los routers Cisco todas las interfaces vienen deshabilitadas ('shutdown') por seguridad.",
       cita: "Semanas 12, 14 y 15: Configuración Básica de Dispositivos Cisco IOS"
     },
@@ -692,6 +696,7 @@ const PC3_REF_DATA = {
         "nslookup se utiliza únicamente para configurar servidores DHCP en la nube."
       ],
       correcta: 1,
+      respuesta: 1,
       explicacion: "Si 'ping nombre' falla, no sabemos si falló el DNS o falló la conectividad ICMP o el servidor está apagado. Con 'nslookup nombre' probamos directamente la resolución DNS de Capa de Aplicación.",
       cita: "Semana 13: Capa de Aplicación y Diagnóstico de Red"
     },
@@ -700,6 +705,11 @@ const PC3_REF_DATA = {
       semana: 14,
       tipo: "verdadero_falso",
       enunciado: "Si en el Servidor DHCP se define como Start IP la dirección 192.168.10.1, y esa misma IP está asignada estáticamente al Servidor 1, no habrá ningún problema porque el servidor DHCP detecta automáticamente sus propias IPs y no las entrega.",
+      opciones: [
+        "Verdadero",
+        "Falso"
+      ],
+      respuesta: 1,
       esVerdadero: false,
       explicacion: "Falso. En el servicio DHCP de servidores genéricos de Packet Tracer, si la IP inicial coincide con una IP ya asignada, se generará un conflicto de dirección IP ('IP address conflict') en la red. Se debe iniciar el rango por encima de las IPs estáticas o usar exclusiones.",
       cita: "Semana 14: DHCP y Administración de Direcciones"
@@ -709,6 +719,11 @@ const PC3_REF_DATA = {
       semana: 15,
       tipo: "verdadero_falso",
       enunciado: "Para que una PC en la subred 192.168.10.0/24 pueda comunicarse exitosamente mediante ping con una Laptop en la subred 192.169.1.0/24, ambas deben tener configurado como Default Gateway la dirección IP de la interfaz del router conectada a su propia subred local.",
+      opciones: [
+        "Verdadero",
+        "Falso"
+      ],
+      respuesta: 0,
       esVerdadero: true,
       explicacion: "Verdadero. Al tratarse de dos redes lógicas distintas, los dispositivos terminales no pueden resolver la MAC destino por ARP local; deben enviar las tramas dirigidas a la MAC de su Default Gateway (el router 2811), quien enrutará los paquetes entre subredes.",
       cita: "Semana 15: Enrutamiento Inter-Red y Puertas de Enlace"

@@ -4,9 +4,20 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Simulador PC3 - Redes y Comunicación de Datos I (UTP)</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E%F0%9F%93%A1%3C/text%3E%3C/svg%3E">
   <link rel="stylesheet" href="styles.css">
 </head>
 <body>
+
+  <noscript>
+    <div style="background:#fef2f2;border:2px solid #dc2626;color:#991b1b;padding:1rem;margin:1rem;border-radius:8px;font-family:sans-serif;">
+      <strong>JavaScript está desactivado.</strong> Esta aplicación necesita JavaScript para mostrar las preguntas,
+      los comandos y los ejercicios. Actívalo en tu navegador y recarga la página.
+    </div>
+  </noscript>
+
+  <!-- AVISO GLOBAL DE ERRORES (oculto por defecto) -->
+  <div id="app-fatal" class="app-fatal" role="alert" style="display:none;"></div>
 
   <!-- HEADER -->
   <header class="app-header">
@@ -31,6 +42,7 @@
       <button class="tab-btn" data-tab="calculo">&#129303; Ejercicios de Cálculo</button>
       <button class="tab-btn" data-tab="simulacro">&#9201; Simulacro de Examen</button>
       <button class="tab-btn" data-tab="pc3ref">&#128221; PC3 de Referencia (Examen en Hoja)</button>
+      <button class="tab-btn" data-tab="resumenes">&#128218; Resúmenes Teóricos</button>
       <button class="tab-btn" data-tab="progreso">&#128202; Panel de Progreso</button>
       <button class="tab-btn" data-tab="flashcards">&#127183; Modo Tarjetas</button>
     </div>
@@ -72,6 +84,8 @@
           <button id="btn-reset-preguntas" class="btn btn-secondary btn-sm">&#8635; Reiniciar Respuestas</button>
           <span id="preguntas-counter" style="margin-left: auto; font-weight: 600; font-size: 0.88rem; color: var(--primary);"></span>
         </div>
+
+        <div id="preguntas-aviso" class="inline-notice" style="display: none;"></div>
 
         <div id="preguntas-container"></div>
       </div>
@@ -203,6 +217,7 @@ Escriba el comando solicitado y presione [Enter]:</div>
 
       <!-- PANTALLA ACTIVA DEL SIMULACRO -->
       <div id="simulacro-activo" style="display: none;">
+        <div id="simulacro-aviso" class="inline-notice" style="display: none;"></div>
         <div class="timer-bar">
           <div>
             <span style="font-size: 0.85rem; text-transform: uppercase; letter-spacing: 0.05em;">Tiempo Restante</span>
@@ -292,6 +307,16 @@ Escriba el comando solicitado y presione [Enter]:</div>
           <h3 style="margin-bottom: 0.75rem; color: var(--danger);">&#9888; Preguntas en las que has fallado:</h3>
           <div id="fallos-list-container"></div>
         </div>
+
+        <!-- DIAGNÓSTICO DE CARGA DE DATOS -->
+        <div class="card" id="data-status-card" style="margin-top: 1.5rem; border-left: 4px solid #16a34a; background: #f0fdf4;">
+          <div class="card-title" style="color: #166534; font-size: 1rem;">&#9989; Estado de carga de los datos</div>
+          <p style="font-size: 0.85rem; color: #166534; margin-bottom: 0.75rem;">
+            Comprueba que todos los archivos de datos se cargaron correctamente. Si alguno aparece en rojo, recarga con
+            <strong>Ctrl + F5</strong> o verifica que la carpeta <code>data/</code> esté junto a <code>index.html</code>.
+          </p>
+          <div id="data-status-list" class="data-status-list"></div>
+        </div>
       </div>
     </section>
 
@@ -375,15 +400,23 @@ Escriba el comando solicitado y presione [Enter]:</div>
 
         <!-- SUBTAB 1: LAS 4 PREGUNTAS -->
         <div id="pc3ref-sub-preguntas" class="pc3ref-subview active">
-          <div style="display: flex; gap: 0.5rem; margin-bottom: 1rem; flex-wrap: wrap; align-items: center;">
-            <span style="font-weight: 600; font-size: 0.9rem;">Ver pregunta:</span>
-            <button class="btn btn-secondary btn-sm pc3ref-q-nav active" data-q="todos">Todas (P1 - P4)</button>
-            <button class="btn btn-secondary btn-sm pc3ref-q-nav" data-q="p1">P1: DNS (5 pts)</button>
-            <button class="btn btn-secondary btn-sm pc3ref-q-nav" data-q="p2">P2: DHCP (5 pts)</button>
-            <button class="btn btn-secondary btn-sm pc3ref-q-nav" data-q="p3">P3: Correo (5 pts)</button>
-            <button class="btn btn-secondary btn-sm pc3ref-q-nav" data-q="p4">P4: Router / Topología (5 pts)</button>
-            <div style="margin-left: auto; font-weight: 700; color: var(--primary); font-size: 0.92rem;" id="pc3ref-total-score-badge">
-              Calificación Autoevaluada: 0.0 / 20.0
+          <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 0.75rem; margin-bottom: 1rem; background: #f8fafc; padding: 0.6rem 0.85rem; border-radius: 8px; border: 1px solid var(--border);">
+            <div style="display: flex; gap: 0.5rem; flex-wrap: wrap; align-items: center;">
+              <span style="font-weight: 600; font-size: 0.9rem;">Ver pregunta:</span>
+              <button class="btn btn-secondary btn-sm pc3ref-q-nav active" data-q="todos">Todas (P1 - P4)</button>
+              <button class="btn btn-secondary btn-sm pc3ref-q-nav" data-q="p1">P1: DNS (5 pts)</button>
+              <button class="btn btn-secondary btn-sm pc3ref-q-nav" data-q="p2">P2: DHCP (5 pts)</button>
+              <button class="btn btn-secondary btn-sm pc3ref-q-nav" data-q="p3">P3: Correo (5 pts)</button>
+              <button class="btn btn-secondary btn-sm pc3ref-q-nav" data-q="p4">P4: Router / Topología (5 pts)</button>
+            </div>
+            <div style="display: flex; align-items: center; gap: 0.75rem; margin-left: auto; flex-wrap: wrap;">
+              <label style="display: inline-flex; align-items: center; gap: 0.4rem; font-size: 0.84rem; font-weight: 600; cursor: pointer; color: #0369a1; background: #e0f2fe; padding: 0.3rem 0.65rem; border-radius: 6px; border: 1px solid #bae6fd;">
+                <input type="checkbox" id="chk-pc3ref-mostrar-soluciones">
+                <span>Mostrar todas las soluciones y rúbricas</span>
+              </label>
+              <div style="font-weight: 700; color: var(--primary); font-size: 0.92rem;" id="pc3ref-total-score-badge">
+                Calificación Autoevaluada: 0.0 / 20.0
+              </div>
             </div>
           </div>
 
@@ -421,9 +454,10 @@ Escriba el comando solicitado y presione [Enter]:</div>
           <div style="background: #f8fafc; border: 1px solid var(--border); border-radius: 8px; padding: 1rem; margin-bottom: 1rem;">
             <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 0.5rem;">
               <span style="font-weight: 700; color: var(--primary);">Práctica de Comandos para Examen Teórico</span>
-              <div style="display: flex; gap: 0.5rem;">
-                <button id="btn-drill-modo-escribir" class="btn btn-primary btn-sm active">Modo Escribe el Comando</button>
-                <button id="btn-drill-modo-completar" class="btn btn-secondary btn-sm">Modo Completa el Comando</button>
+              <div style="display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap;">
+                <span id="drill-summary-badge" style="font-size: 0.84rem; font-weight: 700; color: #0369a1; background: #e0f2fe; border: 1px solid #bae6fd; padding: 0.3rem 0.6rem; border-radius: 6px;">10 ejercicios: 5 escribir + 5 completar</span>
+                <button id="btn-drill-modo-escribir" class="btn btn-primary btn-sm active">Modo Escribe el Comando (0/5)</button>
+                <button id="btn-drill-modo-completar" class="btn btn-secondary btn-sm">Modo Completa el Comando (0/5)</button>
               </div>
             </div>
             <p style="font-size: 0.85rem; color: var(--text-muted); margin-top: 0.35rem;">
@@ -453,6 +487,7 @@ Escriba el comando solicitado y presione [Enter]:</div>
               <div>
                 <span style="font-size: 0.85rem; font-weight: 700; color: #1e3a8a;">TEMPORIZADOR:</span>
                 <span id="pc3ref-timer-display" style="font-size: 1.3rem; font-weight: 700; font-family: monospace; color: #1e3a8a; margin-left: 0.5rem;">60:00</span>
+                <span id="pc3ref-timer-status" style="font-size: 0.8rem; font-weight: 600; color: var(--text-muted); margin-left: 0.5rem;"></span>
               </div>
               <div style="display: flex; gap: 0.5rem;">
                 <button id="btn-pc3ref-timer-start" class="btn btn-success btn-sm">&#9658; Iniciar (60 min)</button>
@@ -465,17 +500,51 @@ Escriba el comando solicitado y presione [Enter]:</div>
             </div>
           </div>
 
-          <div class="card" style="border: 2px dashed #cbd5e1; background: #fafafa;">
-            <div style="text-align: center; color: var(--text-muted); padding: 1rem;">
-              <span style="font-size: 2rem;">📄</span>
-              <p style="font-weight: 600; margin-top: 0.5rem;">Vista previa de formato de examen en papel</p>
-              <p style="font-size: 0.85rem;">
-                Al hacer clic en "Imprimir Examen en Blanco", se abre el diálogo de impresión con el encabezado institucional de la UTP, las 4 preguntas, el diagrama de topología y renglones pautados para que practiques escribiendo a mano.
-              </p>
-            </div>
+          <div style="margin-bottom: 0.75rem;">
+            <h4 style="color: var(--primary); font-size: 1rem; margin-bottom: 0.25rem;">📄 Maqueta de Vista Previa del Examen en Hoja (Formato Oficial UTP)</h4>
+            <p style="font-size: 0.85rem; color: var(--text-muted);">
+              Esta vista previa simula fielmente la hoja de evaluación física con renglones para escribir a mano. Utiliza el botón "Imprimir Examen en Blanco" para imprimirlo o exportarlo a PDF.
+            </p>
           </div>
+          <div id="screen-exam-preview" class="screen-exam-sheet"></div>
         </div>
 
+      </div>
+    </section>
+
+    <!-- MODULO 7: VISOR DE RESÚMENES TEÓRICOS -->
+    <section id="mod-resumenes" class="module-section">
+      <div class="card">
+        <div class="card-title">&#128218; Visor de Resúmenes Teóricos por Semana</div>
+        <p style="font-size: 0.9rem; color: var(--text-muted); margin-bottom: 1rem;">
+          Guías oficiales de estudio condensadas (Semanas 11 a 15 y estilo de exámenes). Incluye conceptos clave, diagramas de flujo, tablas de puertos, comandos de laboratorio y análisis de exámenes previos.
+        </p>
+
+        <div class="filters-bar" style="flex-wrap: wrap; gap: 0.75rem; align-items: center;">
+          <label><strong>Semana:</strong>
+            <select id="select-resumen-semana" class="filter-select" style="min-width: 260px;">
+              <option value="11">Semana 11 (Transporte, TCP, UDP, Wireshark)</option>
+              <option value="12">Semana 12 (Subneteo IPv6, ICMPv6, NDP, EIGRP)</option>
+              <option value="13">Semana 13 (Capa Aplicación, DNS, HTTP, SLAAC)</option>
+              <option value="14">Semana 14 (DHCP, FTP, SMTP, POP3, Rutas)</option>
+              <option value="15">Semana 15 (VLANs, VTP, 802.1Q, Seguridad)</option>
+              <option value="estilo">Análisis de Estilo de Exámenes (PC1 y PC2)</option>
+            </select>
+          </label>
+
+          <div style="flex: 1; min-width: 240px; position: relative;">
+            <input type="text" id="input-buscar-resumen" class="filter-select" placeholder="🔍 Buscar en este resumen (ej. SYN, SLAAC, VTP)..." style="width: 100%;" />
+          </div>
+
+          <span id="resumen-search-status" style="font-size: 0.85rem; font-weight: 600; color: var(--text-muted);"></span>
+        </div>
+
+        <div id="resumen-meta-bar" style="display: flex; justify-content: space-between; align-items: center; margin: 1rem 0 0.5rem 0; padding-bottom: 0.5rem; border-bottom: 1px solid var(--border);">
+          <span id="resumen-titulo" style="font-weight: 700; color: var(--primary); font-size: 1.05rem;"></span>
+          <span id="resumen-badge-archivo" style="font-size: 0.78rem; font-family: monospace; background: #f1f5f9; padding: 2px 6px; border-radius: 4px; color: var(--text-muted);"></span>
+        </div>
+
+        <div id="resumen-contenido-box" class="resumen-markdown-view"></div>
       </div>
     </section>
 
@@ -489,6 +558,7 @@ Escriba el comando solicitado y presione [Enter]:</div>
   <script src="data/comandos.js"></script>
   <script src="data/calculo.js"></script>
   <script src="data/pc3_referencia.js"></script>
+  <script src="data/resumenes.js"></script>
   <script src="app.js"></script>
 </body>
 </html>
