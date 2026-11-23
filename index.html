@@ -1,0 +1,494 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Simulador PC3 - Redes y Comunicación de Datos I (UTP)</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+  <!-- HEADER -->
+  <header class="app-header">
+    <div class="header-container">
+      <div class="brand">
+        <h1>Simulador PC3: Redes y Comunicación de Datos I</h1>
+        <p>Universidad Tecnológica del Perú (UTP) • Semanas 11 a 15</p>
+      </div>
+      <div class="header-badges">
+        <span class="badge">Semanas 11 - 15</span>
+        <span class="badge">Aprobatoria: &ge; 12</span>
+        <span class="badge">100% Offline</span>
+      </div>
+    </div>
+  </header>
+
+  <!-- NAVIGATION TABS -->
+  <nav class="nav-tabs">
+    <div class="tabs-container">
+      <button class="tab-btn active" data-tab="preguntas">&#128214; Preguntas Teóricas</button>
+      <button class="tab-btn" data-tab="comandos">&#128421; Entrenador de Comandos</button>
+      <button class="tab-btn" data-tab="calculo">&#129303; Ejercicios de Cálculo</button>
+      <button class="tab-btn" data-tab="simulacro">&#9201; Simulacro de Examen</button>
+      <button class="tab-btn" data-tab="pc3ref">&#128221; PC3 de Referencia (Examen en Hoja)</button>
+      <button class="tab-btn" data-tab="progreso">&#128202; Panel de Progreso</button>
+      <button class="tab-btn" data-tab="flashcards">&#127183; Modo Tarjetas</button>
+    </div>
+  </nav>
+
+  <!-- MAIN CONTAINER -->
+  <main class="main-content">
+
+    <!-- MODULO 1: BANCO DE PREGUNTAS TEÓRICAS -->
+    <section id="mod-preguntas" class="module-section active">
+      <div class="card">
+        <div class="card-title">&#128214; Banco de Preguntas Teóricas</div>
+        <p style="font-size: 0.9rem; color: var(--text-muted); margin-bottom: 1rem;">
+          Entrena con más de 60 preguntas basadas estrictamente en las diapositivas de clase, laboratorios y exámenes de las semanas 11 a 15.
+        </p>
+        
+        <div class="filters-bar">
+          <label><strong>Semana:</strong>
+            <select id="filter-semana-preguntas" class="filter-select">
+              <option value="todas">Todas las semanas (11-15)</option>
+              <option value="11">Semana 11 (TCP, UDP, Wireshark)</option>
+              <option value="12">Semana 12 (Subneteo IPv6, ICMPv6, EIGRP)</option>
+              <option value="13">Semana 13 (Capa Aplicación, DNS, HTTP, SLAAC)</option>
+              <option value="14">Semana 14 (DHCP, FTP, SMTP, POP3, IMAP)</option>
+              <option value="15">Semana 15 (VLANs, VTP, Dot1Q, Seguridad)</option>
+            </select>
+          </label>
+
+          <label><strong>Tipo:</strong>
+            <select id="filter-tipo-preguntas" class="filter-select">
+              <option value="todos">Todos los formatos</option>
+              <option value="opcion_multiple">Opción Múltiple</option>
+              <option value="verdadero_falso">Verdadero / Falso</option>
+              <option value="completar">Completar Término</option>
+              <option value="relacionar">Relacionar Conceptos</option>
+            </select>
+          </label>
+
+          <button id="btn-reset-preguntas" class="btn btn-secondary btn-sm">&#8635; Reiniciar Respuestas</button>
+          <span id="preguntas-counter" style="margin-left: auto; font-weight: 600; font-size: 0.88rem; color: var(--primary);"></span>
+        </div>
+
+        <div id="preguntas-container"></div>
+      </div>
+    </section>
+
+    <!-- MODULO 2: ENTRENADOR DE COMANDOS -->
+    <section id="mod-comandos" class="module-section">
+      <div class="card">
+        <div class="card-title">&#128421; Entrenador de Comandos Cisco IOS y Consola</div>
+        <p style="font-size: 0.9rem; color: var(--text-muted); margin-bottom: 1rem;">
+          Escribe la sintaxis exacta o abreviada (ej. <code>conf t</code>, <code>int g0/0</code>, <code>sh ip route</code>). El sistema tolera abreviaciones oficiales de Cisco, mayúsculas y espacios.
+        </p>
+
+        <div class="filters-bar">
+          <label><strong>Ejercicio:</strong>
+            <select id="select-comando-ejercicio" class="filter-select" style="min-width: 280px;"></select>
+          </label>
+          <button id="btn-cmd-prev" class="btn btn-secondary btn-sm">&larr; Anterior</button>
+          <button id="btn-cmd-next" class="btn btn-secondary btn-sm">Siguiente &rarr;</button>
+          <button id="btn-cmd-pista" class="btn btn-warning btn-sm">&#128161; Ver Pista</button>
+          <button id="btn-cmd-solucion" class="btn btn-secondary btn-sm">&#128065; Ver Solución</button>
+        </div>
+
+        <div id="cmd-scenario-card" style="background: #f1f5f9; padding: 1rem; border-radius: 8px; margin-bottom: 1rem; border-left: 4px solid var(--accent);">
+          <div style="font-size: 0.78rem; font-weight: 700; color: #0284c7; text-transform: uppercase;" id="cmd-meta"></div>
+          <div style="font-size: 1.05rem; font-weight: 600; margin-top: 0.25rem;" id="cmd-enunciado"></div>
+        </div>
+
+        <!-- VENTANA DE TERMINAL -->
+        <div class="terminal-window">
+          <div class="terminal-header">
+            <div class="terminal-dots">
+              <span class="dot dot-red"></span>
+              <span class="dot dot-yellow"></span>
+              <span class="dot dot-green"></span>
+            </div>
+            <span class="terminal-title">Cisco IOS CLI & Shell Simulator</span>
+            <span></span>
+          </div>
+          <div class="terminal-body" id="term-body">
+            <div id="term-history" class="term-output">Cisco IOS Software, C2900 Software (C2900-UNIVERSALK9-M), Version 15.1(4)M4
+Technical Support: http://www.cisco.com/techsupport
+Copyright (c) 1986-2026 by Cisco Systems, Inc.
+---
+Escriba el comando solicitado y presione [Enter]:</div>
+            <div class="term-prompt-line">
+              <span class="term-prompt" id="term-prompt">Router(config)# </span>
+              <input type="text" id="term-input" class="term-input" autocomplete="off" spellcheck="false" autofocus />
+            </div>
+          </div>
+        </div>
+
+        <div id="cmd-feedback" class="feedback-box"></div>
+      </div>
+    </section>
+
+    <!-- MODULO 3: EJERCICIOS DE CÁLCULO -->
+    <section id="mod-calculo" class="module-section">
+      <div class="card">
+        <div class="card-title">&#129303; Generador de Ejercicios de Cálculo</div>
+        <p style="font-size: 0.9rem; color: var(--text-muted); margin-bottom: 1rem;">
+          Resuelve ejercicios numéricos de subneteo IPv6/IPv4, segmentación TCP con MSS, retardos de propagación y transmisión, y tramas Ethernet. Cada ejercicio genera valores aleatorios infinitos con solución paso a paso.
+        </p>
+
+        <div class="filters-bar">
+          <label><strong>Tipo de Problema:</strong>
+            <select id="select-calculo-tipo" class="filter-select" style="min-width: 320px;"></select>
+          </label>
+          <button id="btn-calc-nuevo" class="btn btn-primary btn-sm">&#9858; Nueva Variante Aleatoria</button>
+        </div>
+
+        <div id="calc-exercise-box" style="margin-top: 1rem;">
+          <div class="card" style="border-left: 4px solid #8b5cf6;">
+            <div style="font-size: 0.8rem; color: #7c3aed; font-weight: 700; margin-bottom: 0.35rem;" id="calc-meta"></div>
+            <h3 id="calc-titulo" style="margin-bottom: 0.75rem;"></h3>
+            <div id="calc-enunciado" style="font-size: 1.05rem; margin-bottom: 1.25rem;"></div>
+
+            <div style="display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap;">
+              <input type="text" id="calc-input" class="input-text" style="width: 280px;" placeholder="Tu respuesta..." />
+              <button id="btn-calc-verificar" class="btn btn-success">Verificar</button>
+              <button id="btn-calc-pasos" class="btn btn-secondary">Ver Paso a Paso</button>
+            </div>
+
+            <div id="calc-feedback" class="feedback-box"></div>
+            <div id="calc-pasos-box" style="display: none; margin-top: 1rem; background: #faf5ff; border: 1px solid #e9d5ff; padding: 1rem; border-radius: 8px;">
+              <h4 style="color: #6b21a8; margin-bottom: 0.5rem;">&#128221; Resolución Paso a Paso:</h4>
+              <ol id="calc-pasos-lista" style="padding-left: 1.25rem; line-height: 1.6; font-size: 0.92rem;"></ol>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- MODULO 4: SIMULACRO DE EXAMEN -->
+    <section id="mod-simulacro" class="module-section">
+      <!-- CONFIGURACIÓN PREVIA AL EXAMEN -->
+      <div id="simulacro-config" class="card">
+        <div class="card-title">&#9201; Configuración del Simulacro de Examen PC3</div>
+        <p style="font-size: 0.92rem; color: var(--text-muted); margin-bottom: 1.25rem;">
+          Simula el examen real con una combinación ponderada de teoría, comandos y ejercicios de cálculo. Calificación en escala vigesimal oficial UTP (0 a 20). Nota mínima aprobatoria: 12.
+        </p>
+
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 1rem; margin-bottom: 1.5rem;">
+          <div style="background: #f8fafc; padding: 1rem; border-radius: 8px; border: 1px solid var(--border);">
+            <label style="font-weight: 600; display: block; margin-bottom: 0.5rem;">Tiempo Límite:</label>
+            <select id="simulacro-tiempo" class="filter-select" style="width: 100%;">
+              <option value="30">30 Minutos (Intensivo)</option>
+              <option value="45" selected>45 Minutos (Recomendado)</option>
+              <option value="60">60 Minutos (Estándar)</option>
+              <option value="0">Sin tiempo límite</option>
+            </select>
+          </div>
+
+          <div style="background: #f8fafc; padding: 1rem; border-radius: 8px; border: 1px solid var(--border);">
+            <label style="font-weight: 600; display: block; margin-bottom: 0.5rem;">Estructura de Evaluación:</label>
+            <ul style="font-size: 0.85rem; padding-left: 1.2rem; color: var(--text-muted);">
+              <li>10 Preguntas Teóricas (10 pts)</li>
+              <li>5 Ejercicios de Comandos (5 pts)</li>
+              <li>5 Ejercicios de Cálculo (5 pts)</li>
+              <li><strong>Total: 20 Puntos</strong></li>
+            </ul>
+          </div>
+        </div>
+
+        <button id="btn-iniciar-simulacro" class="btn btn-primary" style="padding: 0.75rem 2rem; font-size: 1rem;">
+          &#9654; Iniciar Simulacro de Examen
+        </button>
+      </div>
+
+      <!-- PANTALLA ACTIVA DEL SIMULACRO -->
+      <div id="simulacro-activo" style="display: none;">
+        <div class="timer-bar">
+          <div>
+            <span style="font-size: 0.85rem; text-transform: uppercase; letter-spacing: 0.05em;">Tiempo Restante</span>
+            <div id="simulacro-timer" class="timer-digits">45:00</div>
+          </div>
+          <button id="btn-finalizar-simulacro" class="btn btn-danger">Finalizar y Calificar</button>
+        </div>
+
+        <div id="simulacro-preguntas-lista"></div>
+      </div>
+
+      <!-- RESULTADOS DEL SIMULACRO -->
+      <div id="simulacro-resultado" style="display: none;">
+        <div class="grade-box">
+          <div style="font-size: 1rem; text-transform: uppercase; font-weight: 700; color: var(--text-muted);">Nota Obtenida</div>
+          <div id="grade-display" class="grade-number">16.0 / 20</div>
+          <div id="grade-status" style="font-weight: 700; font-size: 1.2rem;">APROBADO</div>
+          <p id="grade-feedback" style="margin-top: 0.5rem; color: var(--text-muted);"></p>
+          <div style="margin-top: 1.5rem; display: flex; gap: 0.75rem; justify-content: center;">
+            <button id="btn-reintentar-simulacro" class="btn btn-primary">&#8635; Realizar Otro Simulacro</button>
+            <button id="btn-ver-fallos-simulacro" class="btn btn-warning">&#128065; Ver Detalle de Fallos</button>
+          </div>
+        </div>
+
+        <div id="simulacro-revision-container"></div>
+      </div>
+    </section>
+
+    <!-- MODULO 5: PANEL DE PROGRESO -->
+    <section id="mod-progreso" class="module-section">
+      <div class="card">
+        <div class="card-title">&#128202; Panel de Progreso y Rendimiento</div>
+        <p style="font-size: 0.9rem; color: var(--text-muted); margin-bottom: 1.25rem;">
+          Tu progreso se guarda automáticamente en el almacenamiento local (localStorage). Revisa tus estadísticas y fortalece tus debilidades.
+        </p>
+
+        <div class="stats-grid">
+          <div class="stat-box">
+            <div class="stat-val" id="stat-total-resueltas">0</div>
+            <div class="stat-label">Preguntas Respondidas</div>
+          </div>
+          <div class="stat-box">
+            <div class="stat-val" style="color: var(--success);" id="stat-aciertos">0</div>
+            <div class="stat-label">Aciertos Totales</div>
+          </div>
+          <div class="stat-box">
+            <div class="stat-val" style="color: var(--danger);" id="stat-fallos">0</div>
+            <div class="stat-label">Fallos Registrados</div>
+          </div>
+          <div class="stat-box">
+            <div class="stat-val" style="color: var(--accent);" id="stat-porcentaje">0%</div>
+            <div class="stat-label">Efectividad General</div>
+          </div>
+        </div>
+
+        <h3 style="margin-bottom: 0.75rem; font-size: 1.05rem;">Rendimiento por Semana</h3>
+        <div id="stats-semanas-container" style="margin-bottom: 1.5rem;"></div>
+
+        <div style="display: flex; gap: 0.75rem; flex-wrap: wrap;">
+          <button id="btn-repasar-fallos" class="btn btn-warning">&#128260; Repasar Solo Mis Fallos</button>
+          <button id="btn-reset-stats" class="btn btn-danger btn-sm">&#128465; Reiniciar Todas las Estadísticas</button>
+        </div>
+
+        <!-- ESTADÍSTICAS PC3 DE REFERENCIA (EXAMEN EN HOJA) -->
+        <div class="card" style="margin-top: 1.5rem; border-left: 4px solid #0284c7; background: #f0f9ff;">
+          <div class="card-title" style="color: #0369a1;">&#128221; PC3 de Referencia: Progreso de Práctica Escrita</div>
+          <p style="font-size: 0.85rem; color: #0284c7; margin-bottom: 0.75rem;">
+            Estadísticas de respuestas redactadas, autoevaluación por rúbrica vigesimal y comandos entrenados.
+          </p>
+          <div class="stats-grid">
+            <div class="stat-box">
+              <div class="stat-val" style="color: var(--primary);" id="stat-pc3ref-puntos">0.0 / 20</div>
+              <div class="stat-label">Nota Rúbrica Autoevaluada</div>
+            </div>
+            <div class="stat-box">
+              <div class="stat-val" style="color: var(--success);" id="stat-pc3ref-respondidas">0 / 4</div>
+              <div class="stat-label">Preguntas Redactadas</div>
+            </div>
+            <div class="stat-box">
+              <div class="stat-val" style="color: #d97706;" id="stat-pc3ref-cmds">0 / 10</div>
+              <div class="stat-label">Comandos Acertados</div>
+            </div>
+          </div>
+        </div>
+
+        <div id="fallos-review-box" style="margin-top: 1.5rem; display: none;">
+          <h3 style="margin-bottom: 0.75rem; color: var(--danger);">&#9888; Preguntas en las que has fallado:</h3>
+          <div id="fallos-list-container"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- MODULO 6: MODO TARJETAS (FLASHCARDS) -->
+    <section id="mod-flashcards" class="module-section">
+      <div class="card" style="text-align: center;">
+        <div class="card-title" style="justify-content: center;">&#127183; Flashcards de Conceptos y Comandos Clave</div>
+        <p style="font-size: 0.9rem; color: var(--text-muted); margin-bottom: 1rem;">
+          Haz clic en la tarjeta para voltearla y ver la respuesta/explicación.
+        </p>
+
+        <div class="filters-bar" style="justify-content: center;">
+          <label><strong>Filtrar Semana:</strong>
+            <select id="filter-semana-flashcards" class="filter-select">
+              <option value="todas">Todas las semanas</option>
+              <option value="11">Semana 11</option>
+              <option value="12">Semana 12</option>
+              <option value="13">Semana 13</option>
+              <option value="14">Semana 14</option>
+              <option value="15">Semana 15</option>
+            </select>
+          </label>
+        </div>
+
+        <div class="flashcard-wrapper">
+          <div class="flashcard" id="active-flashcard">
+            <!-- CARA FRONTAL -->
+            <div class="card-face card-front">
+              <div style="display: flex; justify-content: space-between; font-size: 0.8rem;">
+                <span id="fc-tag" class="tag-week">SEMANA 11</span>
+                <span id="fc-index" style="color: var(--text-muted);">1 / 50</span>
+              </div>
+              <div id="fc-pregunta" style="font-size: 1.15rem; font-weight: 700; color: #1e293b; margin: auto 0;"></div>
+              <div class="card-hint-text">&#8646; Clic para voltear tarjeta</div>
+            </div>
+            <!-- CARA POSTERIOR -->
+            <div class="card-face card-back">
+              <div style="font-size: 0.8rem; font-weight: 700; color: var(--accent);">RESPUESTA Y EXPLICACIÓN</div>
+              <div id="fc-respuesta" style="font-size: 1rem; color: #0f172a; margin: auto 0; text-align: left; line-height: 1.5;"></div>
+              <div class="card-hint-text">&#8646; Clic para volver a la pregunta</div>
+            </div>
+          </div>
+        </div>
+
+        <div style="display: flex; justify-content: center; gap: 0.75rem; margin-top: 1.5rem;">
+          <button id="btn-fc-prev" class="btn btn-secondary">&larr; Anterior</button>
+          <button id="btn-fc-flip" class="btn btn-primary">&#8646; Voltear</button>
+          <button id="btn-fc-next" class="btn btn-secondary">Siguiente &rarr;</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- MODULO 7: PC3 DE REFERENCIA (EXAMEN EN HOJA) -->
+    <section id="mod-pc3ref" class="module-section">
+      <div class="card">
+        <!-- AVISO VISIBLE OBLIGATORIO -->
+        <div class="pc3ref-notice">
+          <span style="font-size: 1.5rem; line-height: 1;">⚠️</span>
+          <div>
+            <strong>Aviso:</strong> Basado en un examen de referencia (fuente externa); tu examen puede ser distinto.<br>
+            <span style="font-size: 0.85rem; color: #475569;">
+              En la universidad, los exámenes en hoja impresa son <strong>teóricos</strong> y se resuelven <strong>a mano</strong>:
+              describiendo pasos, nombres de campos, valores, comandos de consola y lo que se vería en pantalla. Este módulo entrena esa destreza.
+            </span>
+          </div>
+        </div>
+
+        <div class="card-title" style="margin-top: 1.25rem;">&#128221; PC3 de Referencia: Práctica para Examen Escrito en Hoja</div>
+        <p style="font-size: 0.9rem; color: var(--text-muted); margin-bottom: 1.25rem;">
+          Practica las 4 preguntas de la PC3 física (20 puntos en total). Redacta tus respuestas a mano o en el editor, compáralas con la respuesta modelo, autoevalúate con la rúbrica oficial de 5 puntos y entrena comandos de prueba.
+        </p>
+
+        <!-- SUBTABS DE NAVEGACIÓN INTERNA -->
+        <div class="pc3ref-subtabs">
+          <button class="pc3ref-subtab-btn active" data-subtab="preguntas">&#128221; 4 Preguntas del Examen</button>
+          <button class="pc3ref-subtab-btn" data-subtab="variantes">&#127922; Variantes Aleatorias</button>
+          <button class="pc3ref-subtab-btn" data-subtab="plantillas">&#128203; Hojas de Referencia Rápida</button>
+          <button class="pc3ref-subtab-btn" data-subtab="comandos">&#9000; Entrenador de Comandos</button>
+          <button class="pc3ref-subtab-btn" data-subtab="imprimir">&#128424; Simulacro e Impresión</button>
+        </div>
+
+        <!-- SUBTAB 1: LAS 4 PREGUNTAS -->
+        <div id="pc3ref-sub-preguntas" class="pc3ref-subview active">
+          <div style="display: flex; gap: 0.5rem; margin-bottom: 1rem; flex-wrap: wrap; align-items: center;">
+            <span style="font-weight: 600; font-size: 0.9rem;">Ver pregunta:</span>
+            <button class="btn btn-secondary btn-sm pc3ref-q-nav active" data-q="todos">Todas (P1 - P4)</button>
+            <button class="btn btn-secondary btn-sm pc3ref-q-nav" data-q="p1">P1: DNS (5 pts)</button>
+            <button class="btn btn-secondary btn-sm pc3ref-q-nav" data-q="p2">P2: DHCP (5 pts)</button>
+            <button class="btn btn-secondary btn-sm pc3ref-q-nav" data-q="p3">P3: Correo (5 pts)</button>
+            <button class="btn btn-secondary btn-sm pc3ref-q-nav" data-q="p4">P4: Router / Topología (5 pts)</button>
+            <div style="margin-left: auto; font-weight: 700; color: var(--primary); font-size: 0.92rem;" id="pc3ref-total-score-badge">
+              Calificación Autoevaluada: 0.0 / 20.0
+            </div>
+          </div>
+
+          <div id="pc3ref-questions-container"></div>
+        </div>
+
+        <!-- SUBTAB 2: VARIANTES ALEATORIAS -->
+        <div id="pc3ref-sub-variantes" class="pc3ref-subview">
+          <div style="background: #f8fafc; border: 1px solid var(--border); border-radius: 8px; padding: 1.25rem; margin-bottom: 1.25rem;">
+            <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 0.75rem;">
+              <div>
+                <h3 style="font-size: 1.1rem; color: var(--secondary);">Generador de Variantes del Examen</h3>
+                <p style="font-size: 0.85rem; color: var(--text-muted);">
+                  Genera una combinación aleatoria de apellidos, subred 192.168.X.0, dominio de correo y extensiones para entrenar sin memorizar datos fijos.
+                </p>
+              </div>
+              <button id="btn-generar-variante" class="btn btn-primary">&#9858; Generar Nueva Variante</button>
+            </div>
+            <div id="pc3ref-variante-display" style="margin-top: 1rem;"></div>
+          </div>
+        </div>
+
+        <!-- SUBTAB 3: HOJAS DE REFERENCIA RÁPIDA -->
+        <div id="pc3ref-sub-plantillas" class="pc3ref-subview">
+          <div style="margin-bottom: 1rem;">
+            <p style="font-size: 0.9rem; color: var(--text-muted);">
+              Consulta la secuencia estándar de pasos, qué pestaña abrir en Packet Tracer, campos exactos a configurar y comandos de prueba para cada uno de los 4 servicios.
+            </p>
+          </div>
+          <div id="pc3ref-plantillas-container" class="plantillas-grid"></div>
+        </div>
+
+        <!-- SUBTAB 4: ENTRENADOR DE COMANDOS -->
+        <div id="pc3ref-sub-comandos" class="pc3ref-subview">
+          <div style="background: #f8fafc; border: 1px solid var(--border); border-radius: 8px; padding: 1rem; margin-bottom: 1rem;">
+            <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 0.5rem;">
+              <span style="font-weight: 700; color: var(--primary);">Práctica de Comandos para Examen Teórico</span>
+              <div style="display: flex; gap: 0.5rem;">
+                <button id="btn-drill-modo-escribir" class="btn btn-primary btn-sm active">Modo Escribe el Comando</button>
+                <button id="btn-drill-modo-completar" class="btn btn-secondary btn-sm">Modo Completa el Comando</button>
+              </div>
+            </div>
+            <p style="font-size: 0.85rem; color: var(--text-muted); margin-top: 0.35rem;">
+              El profesor confirmó que en el examen teórico vendrán comandos. El validador tolera abreviaciones oficiales de Cisco IOS (ej. <code>int fa0/0</code>, <code>no sh</code>, <code>conf t</code>, <code>ip add</code>) y comandos de consola de PC (<code>ipconfig /all</code>, <code>nslookup</code>).
+            </p>
+          </div>
+          <div id="pc3ref-comandos-container"></div>
+        </div>
+
+        <!-- SUBTAB 5: SIMULACRO E IMPRESIÓN -->
+        <div id="pc3ref-sub-imprimir" class="pc3ref-subview">
+          <div style="background: #eff6ff; border: 1px solid #bfdbfe; border-radius: 8px; padding: 1.25rem; margin-bottom: 1.5rem;">
+            <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 1rem;">
+              <div>
+                <h3 style="color: var(--primary); font-size: 1.15rem;">Simulacro de Examen en Hoja (Papel)</h3>
+                <p style="font-size: 0.85rem; color: #1e40af; margin-top: 0.25rem;">
+                  Imprime el examen con formato oficial limpio (sin barras de navegación ni botones), con renglones para escribir tus respuestas a mano y evaluar tu tiempo.
+                </p>
+              </div>
+              <div style="display: flex; gap: 0.75rem; flex-wrap: wrap;">
+                <button id="btn-imprimir-examen" class="btn btn-primary">&#128424; Imprimir Examen en Blanco</button>
+                <button id="btn-imprimir-solucionario" class="btn btn-secondary">&#128424; Imprimir Solucionario y Rúbrica</button>
+              </div>
+            </div>
+
+            <div style="margin-top: 1.25rem; padding-top: 1rem; border-top: 1px solid #bfdbfe; display: flex; gap: 1.5rem; align-items: center; flex-wrap: wrap;">
+              <div>
+                <span style="font-size: 0.85rem; font-weight: 700; color: #1e3a8a;">TEMPORIZADOR:</span>
+                <span id="pc3ref-timer-display" style="font-size: 1.3rem; font-weight: 700; font-family: monospace; color: #1e3a8a; margin-left: 0.5rem;">60:00</span>
+              </div>
+              <div style="display: flex; gap: 0.5rem;">
+                <button id="btn-pc3ref-timer-start" class="btn btn-success btn-sm">&#9658; Iniciar (60 min)</button>
+                <button id="btn-pc3ref-timer-pause" class="btn btn-warning btn-sm">&#10074;&#10074; Pausar</button>
+                <button id="btn-pc3ref-timer-reset" class="btn btn-secondary btn-sm">&#8635; Reiniciar</button>
+              </div>
+              <div style="margin-left: auto; font-size: 0.9rem; font-weight: 600; color: var(--secondary);">
+                Puntaje actual en rúbrica: <span id="pc3ref-print-score" style="color: var(--primary); font-size: 1.1rem;">0.0 / 20</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="card" style="border: 2px dashed #cbd5e1; background: #fafafa;">
+            <div style="text-align: center; color: var(--text-muted); padding: 1rem;">
+              <span style="font-size: 2rem;">📄</span>
+              <p style="font-weight: 600; margin-top: 0.5rem;">Vista previa de formato de examen en papel</p>
+              <p style="font-size: 0.85rem;">
+                Al hacer clic en "Imprimir Examen en Blanco", se abre el diálogo de impresión con el encabezado institucional de la UTP, las 4 preguntas, el diagrama de topología y renglones pautados para que practiques escribiendo a mano.
+              </p>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </section>
+
+  </main>
+
+  <!-- ELEMENTOS OCULTOS EXCLUSIVOS PARA IMPRESIÓN LIMPIA -->
+  <div id="print-exam-area" class="print-only"></div>
+
+  <!-- SCRIPTS DE DATOS Y APLICACIÓN -->
+  <script src="data/preguntas.js"></script>
+  <script src="data/comandos.js"></script>
+  <script src="data/calculo.js"></script>
+  <script src="data/pc3_referencia.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
